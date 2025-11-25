@@ -1,410 +1,449 @@
 """
-Yahoo Finance MCP Server client with temporal locking (Time Machine).
+Yahoo Finance MCP Server
 
-This client wraps the yahoo-finance-mcp server with:
-- Simulation date enforcement
-- Look-ahead bias detection
-- Cost tracking
+A FastMCP server that provides access to market data and financial statistics.
+Implements temporal locking (Time Machine) to prevent look-ahead bias.
 """
 
+import os
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
-import structlog
+from fastmcp import FastMCP
 from pydantic import BaseModel, Field
-
-from mcp_servers.base import BaseMCPClient, MCPConfig
-from cio_agent.models import TemporalViolation, ViolationSeverity
-
-logger = structlog.get_logger()
+import yfinance as yf
 
 
-class TemporalViolationError(Exception):
-    """Raised when an agent attempts to access future data."""
-    pass
-
-
-class PriceData(BaseModel):
-    """Historical price data (OHLCV)."""
+class StockQuote(BaseModel):
+    """Current stock quote data."""
     ticker: str
-    start_date: str
-    end_date: str
-    data: list[dict[str, Any]] = Field(default_factory=list)
-    # Each item: {date, open, high, low, close, volume, adj_close}
+    name: str = ""
+    sector: str = ""
+    industry: str = ""
+    current_price: float | None = None
+    market_cap: float | None = None
+    pe_ratio: float | None = None
+    forward_pe: float | None = None
+    dividend_yield: float | None = None
+    fifty_two_week_high: float | None = None
+    fifty_two_week_low: float | None = None
+    analyst_rating: str = ""
 
 
-class FinancialStatement(BaseModel):
-    """Financial statement data from Yahoo Finance."""
+class FinancialStatements(BaseModel):
+    """Financial statement data."""
     ticker: str
-    statement_type: str  # income_statement, balance_sheet, cash_flow
-    period: str  # annual, quarterly
-    data: dict[str, Any] = Field(default_factory=dict)
+    period: str
+    statement_type: str
+    data: dict[str, float | None] = Field(default_factory=dict)
 
 
-class KeyStatistics(BaseModel):
-    """Key statistics for a ticker."""
-    ticker: str
-    as_of_date: str
-    market_cap: Optional[float] = None
-    pe_ratio: Optional[float] = None
-    forward_pe: Optional[float] = None
-    peg_ratio: Optional[float] = None
-    price_to_book: Optional[float] = None
-    beta: Optional[float] = None
-    fifty_two_week_high: Optional[float] = None
-    fifty_two_week_low: Optional[float] = None
-    fifty_day_average: Optional[float] = None
-    two_hundred_day_average: Optional[float] = None
-    dividend_yield: Optional[float] = None
-    extra: dict[str, Any] = Field(default_factory=dict)
+class HistoricalPrice(BaseModel):
+    """Historical price data point."""
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    adj_close: float | None = None
 
 
-class AnalystEstimates(BaseModel):
-    """Analyst estimates and recommendations."""
-    ticker: str
-    as_of_date: str
-    target_mean_price: Optional[float] = None
-    target_high_price: Optional[float] = None
-    target_low_price: Optional[float] = None
-    recommendation_mean: Optional[float] = None
-    recommendation_key: Optional[str] = None
-    number_of_analyst_opinions: Optional[int] = None
-    eps_estimates: dict[str, Any] = Field(default_factory=dict)
-    revenue_estimates: dict[str, Any] = Field(default_factory=dict)
-
-
-class TimeMachineYFinanceClient(BaseMCPClient):
+def create_yahoo_finance_server(
+    simulation_date: datetime | None = None,
+    name: str = "yahoo-finance-mcp",
+) -> FastMCP:
     """
-    Yahoo Finance MCP client with Time Machine temporal enforcement.
+    Create the Yahoo Finance MCP server.
 
-    Features:
-    - Accepts a simulation_date from the Green Agent
-    - All data requests are filtered to only return information available as of that date
-    - Tracks temporal violations for penalty calculation
+    Args:
+        simulation_date: Optional date for temporal locking (Time Machine)
+        name: Server name
+
+    Returns:
+        Configured FastMCP server
     """
+    mcp = FastMCP(name)
 
-    def __init__(
-        self,
-        config: MCPConfig,
-        simulation_date: Optional[datetime] = None,
-        temporal_lock_enabled: bool = True
-    ):
-        super().__init__(config, simulation_date)
-        self.temporal_lock_enabled = temporal_lock_enabled
-        self.temporal_violations: list[TemporalViolation] = []
+    _simulation_date = simulation_date
 
-    async def health_check(self) -> bool:
-        """Check if the Yahoo Finance MCP server is healthy."""
+    def filter_by_simulation_date(df, date_column=None):
+        """Filter dataframe to only include data up to simulation date."""
+        if _simulation_date is None or df.empty:
+            return df
+
+        if date_column:
+            return df[df[date_column] <= _simulation_date]
+        elif hasattr(df.index, 'tz'):
+            # Handle timezone-aware index
+            import pandas as pd
+            sim_date_aware = pd.Timestamp(_simulation_date)
+            if df.index.tz is not None:
+                sim_date_aware = sim_date_aware.tz_localize(df.index.tz)
+            return df[df.index <= sim_date_aware]
+        else:
+            return df[df.index <= _simulation_date]
+
+    @mcp.tool
+    def get_quote(ticker: str) -> dict[str, Any]:
+        """
+        Get current stock quote and basic info.
+
+        Args:
+            ticker: Stock ticker symbol (e.g., "NVDA", "AAPL", "MSFT")
+
+        Returns:
+            Stock quote with price, market cap, ratios, and company info
+        """
         try:
-            await self._request("GET", "/health", "yfinance:health_check")
-            return True
-        except Exception:
-            return False
+            stock = yf.Ticker(ticker)
+            info = stock.info
 
-    def _check_temporal_lock(
-        self,
+            return StockQuote(
+                ticker=ticker,
+                name=info.get("longName", ""),
+                sector=info.get("sector", ""),
+                industry=info.get("industry", ""),
+                current_price=info.get("currentPrice") or info.get("regularMarketPrice"),
+                market_cap=info.get("marketCap"),
+                pe_ratio=info.get("trailingPE"),
+                forward_pe=info.get("forwardPE"),
+                dividend_yield=info.get("dividendYield"),
+                fifty_two_week_high=info.get("fiftyTwoWeekHigh"),
+                fifty_two_week_low=info.get("fiftyTwoWeekLow"),
+                analyst_rating=info.get("recommendationKey", ""),
+            ).model_dump()
+
+        except Exception as e:
+            return {"error": str(e), "ticker": ticker}
+
+    @mcp.tool
+    def get_historical_prices(
         ticker: str,
-        requested_date: str,
-        raise_error: bool = True
-    ) -> bool:
+        period: str = "1y",
+        interval: str = "1d",
+    ) -> list[dict[str, Any]]:
         """
-        Check if the requested date violates temporal constraints.
+        Get historical price data.
 
         Args:
-            ticker: Ticker being queried
-            requested_date: Date being requested
-            raise_error: Whether to raise an error on violation
+            ticker: Stock ticker symbol
+            period: Time period - "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"
+            interval: Data interval - "1d", "1wk", "1mo"
 
         Returns:
-            True if violation detected, False otherwise
+            List of historical price data points (OHLCV)
         """
-        if not self.temporal_lock_enabled or not self.simulation_date:
-            return False
-
         try:
-            req_date = datetime.fromisoformat(requested_date.replace("Z", "+00:00"))
-            if req_date.tzinfo:
-                req_date = req_date.replace(tzinfo=None)
-        except ValueError:
-            # Try parsing as date only
-            req_date = datetime.strptime(requested_date, "%Y-%m-%d")
+            stock = yf.Ticker(ticker)
+            hist = stock.history(period=period, interval=interval)
 
-        if req_date > self.simulation_date:
-            days_ahead = (req_date - self.simulation_date).days
-            severity = (
-                ViolationSeverity.HIGH if days_ahead > 90
-                else ViolationSeverity.MEDIUM if days_ahead > 30
-                else ViolationSeverity.LOW
-            )
+            # Apply temporal lock
+            hist = filter_by_simulation_date(hist)
 
-            violation = TemporalViolation(
+            return [
+                HistoricalPrice(
+                    date=idx.strftime("%Y-%m-%d"),
+                    open=float(row["Open"]),
+                    high=float(row["High"]),
+                    low=float(row["Low"]),
+                    close=float(row["Close"]),
+                    volume=int(row["Volume"]),
+                    adj_close=float(row.get("Adj Close", row["Close"])),
+                ).model_dump()
+                for idx, row in hist.iterrows()
+            ]
+
+        except Exception as e:
+            return [{"error": str(e), "ticker": ticker}]
+
+    @mcp.tool
+    def get_financials(
+        ticker: str,
+        statement_type: str = "income",
+        period: str = "quarterly",
+    ) -> dict[str, Any]:
+        """
+        Get financial statement data.
+
+        Args:
+            ticker: Stock ticker symbol
+            statement_type: "income", "balance", or "cashflow"
+            period: "quarterly" or "annual"
+
+        Returns:
+            Financial statement data with key metrics
+        """
+        try:
+            stock = yf.Ticker(ticker)
+
+            if period == "quarterly":
+                if statement_type == "income":
+                    stmt = stock.quarterly_income_stmt
+                elif statement_type == "balance":
+                    stmt = stock.quarterly_balance_sheet
+                else:
+                    stmt = stock.quarterly_cashflow
+            else:
+                if statement_type == "income":
+                    stmt = stock.income_stmt
+                elif statement_type == "balance":
+                    stmt = stock.balance_sheet
+                else:
+                    stmt = stock.cashflow
+
+            if stmt.empty:
+                return {"error": f"No {statement_type} data for {ticker}", "ticker": ticker}
+
+            # Get most recent column
+            latest_col = stmt.columns[0]
+            period_str = latest_col.strftime("%Y-%m-%d") if hasattr(latest_col, "strftime") else str(latest_col)
+
+            # Extract key metrics
+            data = {}
+            for idx in stmt.index:
+                val = stmt.loc[idx, latest_col]
+                if val is not None and not (isinstance(val, float) and val != val):
+                    data[str(idx)] = float(val)
+
+            return FinancialStatements(
                 ticker=ticker,
-                requested_date=requested_date,
-                simulation_date=self.simulation_date.isoformat(),
-                days_ahead=days_ahead,
-                severity=severity,
-                tool_name="yahoo-finance-mcp",
-                timestamp=datetime.utcnow()
-            )
-            self.temporal_violations.append(violation)
+                period=period_str,
+                statement_type=statement_type,
+                data=data,
+            ).model_dump()
 
-            logger.warning(
-                "temporal_violation_detected",
-                ticker=ticker,
-                requested=requested_date,
-                simulation=self.simulation_date.isoformat(),
-                days_ahead=days_ahead,
-                severity=severity.value
-            )
+        except Exception as e:
+            return {"error": str(e), "ticker": ticker}
 
-            if raise_error:
-                raise TemporalViolationError(
-                    f"403 Future Data Forbidden: Cannot access {requested_date} data "
-                    f"when simulation date is {self.simulation_date.isoformat()}"
-                )
-            return True
-        return False
-
-    def _enforce_end_date(self, end_date: Optional[str]) -> str:
-        """Enforce that end_date does not exceed simulation_date."""
-        if not self.simulation_date:
-            return end_date or datetime.utcnow().strftime("%Y-%m-%d")
-
-        sim_date_str = self.simulation_date.strftime("%Y-%m-%d")
-
-        if end_date is None:
-            return sim_date_str
-
-        if end_date > sim_date_str:
-            logger.info(
-                "enforcing_simulation_date",
-                original_end=end_date,
-                enforced_end=sim_date_str
-            )
-            return sim_date_str
-
-        return end_date
-
-    async def get_historical_prices(
-        self,
-        ticker: str,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        interval: str = "1d"
-    ) -> PriceData:
+    @mcp.tool
+    def get_key_statistics(ticker: str) -> dict[str, Any]:
         """
-        Get historical price data (OHLCV).
+        Get key statistics and valuation metrics.
 
         Args:
             ticker: Stock ticker symbol
-            start_date: Start date (YYYY-MM-DD)
-            end_date: End date (YYYY-MM-DD), will be capped at simulation_date
-            interval: Data interval (1d, 1wk, 1mo)
 
         Returns:
-            PriceData with OHLCV data
+            Key statistics including P/E, P/B, beta, and other metrics
         """
-        enforced_end = self._enforce_end_date(end_date)
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
 
-        # Check for explicit future date requests
-        if end_date and end_date != enforced_end:
-            self._check_temporal_lock(ticker, end_date, raise_error=False)
+            return {
+                "ticker": ticker,
+                "market_cap": info.get("marketCap"),
+                "enterprise_value": info.get("enterpriseValue"),
+                "pe_ratio": info.get("trailingPE"),
+                "forward_pe": info.get("forwardPE"),
+                "peg_ratio": info.get("pegRatio"),
+                "price_to_book": info.get("priceToBook"),
+                "price_to_sales": info.get("priceToSalesTrailing12Months"),
+                "ev_to_ebitda": info.get("enterpriseToEbitda"),
+                "ev_to_revenue": info.get("enterpriseToRevenue"),
+                "beta": info.get("beta"),
+                "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
+                "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
+                "fifty_day_average": info.get("fiftyDayAverage"),
+                "two_hundred_day_average": info.get("twoHundredDayAverage"),
+                "dividend_yield": info.get("dividendYield"),
+                "dividend_rate": info.get("dividendRate"),
+                "payout_ratio": info.get("payoutRatio"),
+            }
 
-        params = {
-            "ticker": ticker,
-            "interval": interval,
-        }
-        if start_date:
-            params["start"] = start_date
-        params["end"] = enforced_end
+        except Exception as e:
+            return {"error": str(e), "ticker": ticker}
 
-        result = await self._request(
-            "GET",
-            f"/price/{ticker}",
-            f"yfinance:get_price:{interval}",
-            params=params
-        )
-
-        return PriceData(
-            ticker=ticker,
-            start_date=start_date or "",
-            end_date=enforced_end,
-            data=result.get("data", [])
-        )
-
-    async def get_financial_statements(
-        self,
-        ticker: str,
-        statement_type: str = "income_statement",
-        period: str = "annual"
-    ) -> FinancialStatement:
-        """
-        Get financial statements.
-
-        Args:
-            ticker: Stock ticker symbol
-            statement_type: Type of statement (income_statement, balance_sheet, cash_flow)
-            period: Period type (annual, quarterly)
-
-        Returns:
-            FinancialStatement with financial data
-        """
-        params = {
-            "ticker": ticker,
-            "period": period,
-        }
-
-        # Add simulation_date to filter historical data
-        if self.simulation_date:
-            params["as_of_date"] = self.simulation_date.strftime("%Y-%m-%d")
-
-        result = await self._request(
-            "GET",
-            f"/financials/{ticker}/{statement_type}",
-            f"yfinance:get_financials:{statement_type}",
-            params=params
-        )
-
-        return FinancialStatement(
-            ticker=ticker,
-            statement_type=statement_type,
-            period=period,
-            data=result.get("data", {})
-        )
-
-    async def get_key_statistics(
-        self,
-        ticker: str,
-        as_of_date: Optional[str] = None
-    ) -> KeyStatistics:
-        """
-        Get key statistics for a ticker.
-
-        Args:
-            ticker: Stock ticker symbol
-            as_of_date: Date for statistics (defaults to simulation_date)
-
-        Returns:
-            KeyStatistics with valuation and technical metrics
-        """
-        effective_date = as_of_date or (
-            self.simulation_date.strftime("%Y-%m-%d") if self.simulation_date
-            else datetime.utcnow().strftime("%Y-%m-%d")
-        )
-
-        # Check temporal constraint
-        if as_of_date:
-            self._check_temporal_lock(ticker, as_of_date)
-
-        params = {
-            "ticker": ticker,
-            "as_of_date": effective_date,
-        }
-
-        result = await self._request(
-            "GET",
-            f"/statistics/{ticker}",
-            "yfinance:get_statistics",
-            params=params
-        )
-
-        return KeyStatistics(
-            ticker=ticker,
-            as_of_date=effective_date,
-            market_cap=result.get("market_cap"),
-            pe_ratio=result.get("pe_ratio"),
-            forward_pe=result.get("forward_pe"),
-            peg_ratio=result.get("peg_ratio"),
-            price_to_book=result.get("price_to_book"),
-            beta=result.get("beta"),
-            fifty_two_week_high=result.get("fifty_two_week_high"),
-            fifty_two_week_low=result.get("fifty_two_week_low"),
-            fifty_day_average=result.get("fifty_day_average"),
-            two_hundred_day_average=result.get("two_hundred_day_average"),
-            dividend_yield=result.get("dividend_yield"),
-            extra=result.get("extra", {})
-        )
-
-    async def get_analyst_estimates(
-        self,
-        ticker: str,
-        as_of_date: Optional[str] = None
-    ) -> AnalystEstimates:
+    @mcp.tool
+    def get_analyst_estimates(ticker: str) -> dict[str, Any]:
         """
         Get analyst estimates and recommendations.
 
         Args:
             ticker: Stock ticker symbol
-            as_of_date: Date for estimates (defaults to simulation_date)
 
         Returns:
-            AnalystEstimates with price targets and recommendations
+            Analyst price targets, recommendations, and estimates
         """
-        effective_date = as_of_date or (
-            self.simulation_date.strftime("%Y-%m-%d") if self.simulation_date
-            else datetime.utcnow().strftime("%Y-%m-%d")
-        )
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
 
-        # Check temporal constraint
-        if as_of_date:
-            self._check_temporal_lock(ticker, as_of_date)
+            # Get recommendations
+            recs = stock.recommendations
+            recent_recs = []
+            if recs is not None and not recs.empty:
+                for idx, row in recs.head(5).iterrows():
+                    recent_recs.append({
+                        "date": idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx),
+                        "firm": row.get("Firm", ""),
+                        "grade": row.get("To Grade", row.get("toGrade", "")),
+                    })
 
-        params = {
-            "ticker": ticker,
-            "as_of_date": effective_date,
-        }
+            return {
+                "ticker": ticker,
+                "target_mean_price": info.get("targetMeanPrice"),
+                "target_high_price": info.get("targetHighPrice"),
+                "target_low_price": info.get("targetLowPrice"),
+                "target_median_price": info.get("targetMedianPrice"),
+                "recommendation_mean": info.get("recommendationMean"),
+                "recommendation_key": info.get("recommendationKey"),
+                "number_of_analyst_opinions": info.get("numberOfAnalystOpinions"),
+                "recent_recommendations": recent_recs,
+            }
 
-        result = await self._request(
-            "GET",
-            f"/estimates/{ticker}",
-            "yfinance:get_estimates",
-            params=params
-        )
+        except Exception as e:
+            return {"error": str(e), "ticker": ticker}
 
-        return AnalystEstimates(
-            ticker=ticker,
-            as_of_date=effective_date,
-            target_mean_price=result.get("target_mean_price"),
-            target_high_price=result.get("target_high_price"),
-            target_low_price=result.get("target_low_price"),
-            recommendation_mean=result.get("recommendation_mean"),
-            recommendation_key=result.get("recommendation_key"),
-            number_of_analyst_opinions=result.get("number_of_analyst_opinions"),
-            eps_estimates=result.get("eps_estimates", {}),
-            revenue_estimates=result.get("revenue_estimates", {})
-        )
-
-    async def get_company_info(self, ticker: str) -> dict[str, Any]:
+    @mcp.tool
+    def get_earnings(ticker: str) -> dict[str, Any]:
         """
-        Get basic company information.
+        Get earnings history and estimates.
 
         Args:
             ticker: Stock ticker symbol
 
         Returns:
-            Dictionary with company info (name, sector, industry, etc.)
+            Historical earnings and upcoming estimates
         """
-        result = await self._request(
-            "GET",
-            f"/info/{ticker}",
-            "yfinance:get_info",
-            params={"ticker": ticker}
-        )
-        return result
+        try:
+            stock = yf.Ticker(ticker)
 
-    def get_temporal_violations(self) -> list[TemporalViolation]:
-        """Get all temporal violations logged by this client."""
-        return self.temporal_violations
+            # Get earnings history
+            earnings_hist = []
+            if hasattr(stock, 'earnings_history') and stock.earnings_history is not None:
+                eh = stock.earnings_history
+                if not eh.empty:
+                    for idx, row in eh.iterrows():
+                        earnings_hist.append({
+                            "date": str(idx),
+                            "eps_actual": row.get("epsActual"),
+                            "eps_estimate": row.get("epsEstimate"),
+                            "surprise": row.get("surprise"),
+                            "surprise_pct": row.get("surprisePercent"),
+                        })
 
-    def calculate_lookahead_penalty(self) -> float:
+            # Get earnings dates
+            earnings_dates = []
+            if hasattr(stock, 'earnings_dates') and stock.earnings_dates is not None:
+                ed = stock.earnings_dates
+                if not ed.empty:
+                    for idx, row in ed.head(4).iterrows():
+                        earnings_dates.append({
+                            "date": idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx),
+                            "eps_estimate": row.get("EPS Estimate"),
+                            "reported_eps": row.get("Reported EPS"),
+                            "surprise_pct": row.get("Surprise(%)"),
+                        })
+
+            return {
+                "ticker": ticker,
+                "earnings_history": earnings_hist,
+                "upcoming_earnings": earnings_dates,
+            }
+
+        except Exception as e:
+            return {"error": str(e), "ticker": ticker}
+
+    @mcp.tool
+    def compare_stocks(tickers: list[str], metric: str = "pe_ratio") -> list[dict[str, Any]]:
         """
-        Calculate the look-ahead penalty based on temporal violations.
+        Compare multiple stocks on a specific metric.
+
+        Args:
+            tickers: List of stock ticker symbols
+            metric: Metric to compare - "pe_ratio", "market_cap", "dividend_yield", "beta"
 
         Returns:
-            Penalty multiplier (0.0 to 0.5)
+            Comparison data for each ticker
         """
-        if not self.temporal_violations:
-            return 0.0
+        results = []
+        for ticker in tickers:
+            try:
+                stock = yf.Ticker(ticker)
+                info = stock.info
 
-        total_days_ahead = sum(v.days_ahead for v in self.temporal_violations)
-        return min(0.5, total_days_ahead / 365.0)
+                metric_map = {
+                    "pe_ratio": "trailingPE",
+                    "market_cap": "marketCap",
+                    "dividend_yield": "dividendYield",
+                    "beta": "beta",
+                    "price_to_book": "priceToBook",
+                    "forward_pe": "forwardPE",
+                }
+
+                yf_metric = metric_map.get(metric, metric)
+                value = info.get(yf_metric)
+
+                results.append({
+                    "ticker": ticker,
+                    "name": info.get("longName", ""),
+                    "metric": metric,
+                    "value": value,
+                })
+
+            except Exception as e:
+                results.append({
+                    "ticker": ticker,
+                    "error": str(e),
+                })
+
+        return results
+
+    @mcp.resource("yahoo://quote/{ticker}")
+    def quote_resource(ticker: str) -> str:
+        """
+        Get a formatted stock quote summary.
+
+        Args:
+            ticker: Stock ticker symbol
+
+        Returns:
+            Human-readable stock quote summary
+        """
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
+
+            price = info.get("currentPrice") or info.get("regularMarketPrice", "N/A")
+            market_cap = info.get("marketCap", 0)
+            market_cap_str = f"${market_cap/1e9:.1f}B" if market_cap else "N/A"
+
+            return f"""
+Stock Quote: {ticker}
+Name: {info.get('longName', 'N/A')}
+Sector: {info.get('sector', 'N/A')}
+Industry: {info.get('industry', 'N/A')}
+
+Price: ${price}
+Market Cap: {market_cap_str}
+P/E Ratio: {info.get('trailingPE', 'N/A')}
+Forward P/E: {info.get('forwardPE', 'N/A')}
+
+52-Week High: ${info.get('fiftyTwoWeekHigh', 'N/A')}
+52-Week Low: ${info.get('fiftyTwoWeekLow', 'N/A')}
+
+Analyst Rating: {info.get('recommendationKey', 'N/A')}
+Target Price: ${info.get('targetMeanPrice', 'N/A')}
+""".strip()
+
+        except Exception as e:
+            return f"Error fetching quote for {ticker}: {e}"
+
+    return mcp
+
+
+# CLI entry point
+if __name__ == "__main__":
+    import sys
+
+    simulation_date = None
+    if len(sys.argv) > 1:
+        try:
+            simulation_date = datetime.fromisoformat(sys.argv[1])
+        except ValueError:
+            pass
+
+    server = create_yahoo_finance_server(simulation_date=simulation_date)
+    server.run()

@@ -1,19 +1,21 @@
 """
-MCP Server wrappers for FAB++ evaluation.
+MCP Servers for AgentBusters
 
-This module provides metered, temporally-locked MCP server clients
-for SEC EDGAR, Yahoo Finance, and Python sandbox execution.
+Actual MCP server implementations using FastMCP that provide
+financial data to Purple Agents via the Model Context Protocol.
+
+Servers:
+- sec_edgar: SEC EDGAR filings and XBRL data
+- yahoo_finance: Market data and statistics
+- sandbox: Python code execution
 """
 
-from mcp_servers.base import BaseMCPClient, MCPConfig
-from mcp_servers.edgar import MeteredEDGARClient
-from mcp_servers.yahoo_finance import TimeMachineYFinanceClient
-from mcp_servers.sandbox import QuantSandboxClient
+from mcp_servers.sec_edgar import create_edgar_server
+from mcp_servers.yahoo_finance import create_yahoo_finance_server
+from mcp_servers.sandbox import create_sandbox_server
 
 __all__ = [
-    "BaseMCPClient",
-    "MCPConfig",
-    "MeteredEDGARClient",
-    "TimeMachineYFinanceClient",
-    "QuantSandboxClient",
+    "create_edgar_server",
+    "create_yahoo_finance_server",
+    "create_sandbox_server",
 ]

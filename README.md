@@ -177,10 +177,15 @@ AgentBusters/
 │   │   ├── server.py        # A2A FastAPI server
 │   │   └── cli.py           # CLI interface
 │   │
-│   ├── mcp_servers/         # MCP server clients
+│   ├── mcp_clients/         # MCP client wrappers
 │   │   ├── edgar.py         # SEC EDGAR MCP client
 │   │   ├── yahoo_finance.py # Yahoo Finance MCP client
 │   │   └── sandbox.py       # Python Sandbox MCP client
+│   │
+│   ├── mcp_servers/         # Actual MCP servers (FastMCP)
+│   │   ├── sec_edgar.py     # SEC EDGAR server (edgartools)
+│   │   ├── yahoo_finance.py # Yahoo Finance server (yfinance)
+│   │   └── sandbox.py       # Python execution sandbox
 │   │
 │   └── evaluators/          # Evaluation components
 │       ├── macro.py         # Macro thesis evaluator

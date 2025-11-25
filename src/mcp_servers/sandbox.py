@@ -1,372 +1,409 @@
 """
-Sandbox MCP Server client for isolated Python code execution.
+Python Sandbox MCP Server
 
-This client wraps the mcp-sandbox server with:
-- Pre-loaded financial libraries
-- Code trace analysis
-- Mandatory code execution validation for numerical tasks
+A FastMCP server that provides isolated Python code execution
+with pre-loaded financial libraries for quantitative analysis.
 """
 
-import re
+import io
+import sys
+import traceback
+from contextlib import redirect_stdout, redirect_stderr
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
-import structlog
+from fastmcp import FastMCP
 from pydantic import BaseModel, Field
-
-from mcp_servers.base import BaseMCPClient, MCPConfig
-from cio_agent.models import CodeExecution
-
-logger = structlog.get_logger()
 
 
 class ExecutionResult(BaseModel):
-    """Result of code execution in the sandbox."""
-    execution_id: str
-    code: str
+    """Result of code execution."""
+    success: bool
     stdout: str = ""
     stderr: str = ""
-    return_value: Optional[Any] = None
+    return_value: Any = None
     execution_time_ms: int = 0
-    success: bool = True
-    error_type: Optional[str] = None
-    error_message: Optional[str] = None
+    error_type: str | None = None
+    error_message: str | None = None
+    variables: dict[str, Any] = Field(default_factory=dict)
 
 
-class CodeTraceAnalysis(BaseModel):
-    """Analysis of code execution trace."""
-    libraries_used: list[str] = Field(default_factory=list)
-    calculation_steps: list[str] = Field(default_factory=list)
-    intermediate_values: dict[str, Any] = Field(default_factory=dict)
-    final_result: Optional[Any] = None
-    methodology_score: float = Field(default=0.0, ge=0, le=100)
-    uses_vectorization: bool = False
-    uses_proper_types: bool = False
-    has_error_handling: bool = False
+# Pre-loaded libraries available in sandbox
+PRELOADED_IMPORTS = """
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+import math
+"""
+
+# Safe builtins for execution
+SAFE_BUILTINS = {
+    'abs': abs,
+    'all': all,
+    'any': any,
+    'bool': bool,
+    'dict': dict,
+    'enumerate': enumerate,
+    'filter': filter,
+    'float': float,
+    'format': format,
+    'frozenset': frozenset,
+    'int': int,
+    'isinstance': isinstance,
+    'len': len,
+    'list': list,
+    'map': map,
+    'max': max,
+    'min': min,
+    'pow': pow,
+    'print': print,
+    'range': range,
+    'reversed': reversed,
+    'round': round,
+    'set': set,
+    'slice': slice,
+    'sorted': sorted,
+    'str': str,
+    'sum': sum,
+    'tuple': tuple,
+    'type': type,
+    'zip': zip,
+    'True': True,
+    'False': False,
+    'None': None,
+}
 
 
-class QuantSandboxClient(BaseMCPClient):
+def create_sandbox_server(
+    name: str = "python-sandbox-mcp",
+    timeout_seconds: int = 30,
+) -> FastMCP:
     """
-    Python sandbox MCP client for financial calculations.
+    Create the Python Sandbox MCP server.
 
-    Features:
-    - Pre-loaded heavy financial libraries (numpy, pandas, scipy, etc.)
-    - Code trace analysis for methodology validation
-    - Mandatory code execution validation for numerical tasks
+    Args:
+        name: Server name
+        timeout_seconds: Default execution timeout
+
+    Returns:
+        Configured FastMCP server
     """
+    mcp = FastMCP(name)
 
-    # Pre-loaded libraries in the sandbox
-    PRELOADED_LIBS = [
-        "numpy",
-        "pandas",
-        "scipy",
-        "matplotlib",
-        "yfinance",
-        "quantlib",
-    ]
+    _timeout = timeout_seconds
 
-    # Recognized financial calculation patterns
-    FINANCIAL_PATTERNS = {
-        "dcf": r"(discounted|cash\s*flow|npv|irr|wacc)",
-        "valuation": r"(pe_ratio|price.*earning|market_cap|ev.*ebitda)",
-        "margin": r"(gross_margin|operating_margin|net_margin|profit_margin)",
-        "growth": r"(yoy|year.*over.*year|cagr|growth_rate)",
-        "ratio": r"(current_ratio|debt.*equity|roe|roa|roce)",
-    }
+    def create_execution_namespace() -> dict[str, Any]:
+        """Create a safe namespace for code execution."""
+        namespace: dict[str, Any] = {"__builtins__": SAFE_BUILTINS}
 
-    def __init__(
-        self,
-        config: MCPConfig,
-        simulation_date: Optional[datetime] = None,
-        execution_timeout_seconds: int = 30
-    ):
-        super().__init__(config, simulation_date)
-        self.execution_timeout_seconds = execution_timeout_seconds
-        self.executions: list[CodeExecution] = []
-
-    async def health_check(self) -> bool:
-        """Check if the sandbox MCP server is healthy."""
+        # Pre-load common libraries
         try:
-            await self._request("GET", "/health", "sandbox:health_check")
-            return True
-        except Exception:
-            return False
-
-    def _extract_imports(self, code: str) -> list[str]:
-        """Extract imported libraries from code."""
-        imports = []
-
-        # Match 'import X' and 'from X import Y'
-        import_pattern = r"^(?:import|from)\s+(\w+)"
-        for match in re.finditer(import_pattern, code, re.MULTILINE):
-            lib = match.group(1)
-            if lib not in imports:
-                imports.append(lib)
-
-        return imports
-
-    def _extract_print_statements(self, output: str) -> dict[str, Any]:
-        """Extract intermediate values from print statements in output."""
-        values = {}
-
-        # Pattern for labeled output like "value_name: 123.45"
-        labeled_pattern = r"(\w+):\s*([\d.]+)"
-        for match in re.finditer(labeled_pattern, output):
-            name = match.group(1)
-            try:
-                value = float(match.group(2))
-                values[name] = value
-            except ValueError:
-                values[name] = match.group(2)
-
-        return values
-
-    def _extract_final_value(self, output: str) -> Optional[Any]:
-        """Extract the final value from output."""
-        if not output:
-            return None
-
-        lines = output.strip().split("\n")
-        if not lines:
-            return None
-
-        last_line = lines[-1].strip()
-
-        # Try to parse as number
-        try:
-            if "." in last_line:
-                return float(last_line)
-            return int(last_line)
-        except ValueError:
+            import numpy as np
+            namespace["np"] = np
+            namespace["numpy"] = np
+        except ImportError:
             pass
 
-        # Try to extract number from labeled output
-        match = re.search(r"[\d.]+", last_line)
-        if match:
-            try:
-                return float(match.group())
-            except ValueError:
-                pass
+        try:
+            import pandas as pd
+            namespace["pd"] = pd
+            namespace["pandas"] = pd
+        except ImportError:
+            pass
 
-        return last_line if last_line else None
+        try:
+            from datetime import datetime, timedelta
+            namespace["datetime"] = datetime
+            namespace["timedelta"] = timedelta
+        except ImportError:
+            pass
 
-    def _score_methodology(self, code: str) -> float:
-        """
-        Score the methodology quality of the code.
+        try:
+            import math
+            namespace["math"] = math
+        except ImportError:
+            pass
 
-        Scoring criteria:
-        - Uses pandas/numpy for calculations: +30
-        - Uses appropriate financial functions: +20
-        - Has clear variable naming: +15
-        - Has comments explaining logic: +10
-        - Uses vectorized operations: +10
-        - Has proper error handling: +10
-        - Code is readable/structured: +5
-        """
-        score = 0.0
+        try:
+            from scipy import stats
+            namespace["stats"] = stats
+        except ImportError:
+            pass
 
-        # Uses pandas/numpy
-        if "pandas" in code.lower() or "numpy" in code.lower() or "pd." in code or "np." in code:
-            score += 30
+        return namespace
 
-        # Uses financial calculation patterns
-        for pattern_name, pattern in self.FINANCIAL_PATTERNS.items():
-            if re.search(pattern, code, re.IGNORECASE):
-                score += 5  # Up to 25 points for various patterns
-
-        # Has comments
-        if "#" in code or '"""' in code or "'''" in code:
-            score += 10
-
-        # Uses vectorized operations
-        vectorized_patterns = [r"\.apply\(", r"\.map\(", r"np\.\w+\(", r"\.sum\(", r"\.mean\("]
-        for pattern in vectorized_patterns:
-            if re.search(pattern, code):
-                score += 2  # Up to 10 points
-
-        # Has proper error handling
-        if "try:" in code and "except" in code:
-            score += 10
-
-        # Clear variable naming (lowercase with underscores)
-        var_pattern = r"\b([a-z][a-z0-9_]*)\s*="
-        vars_found = re.findall(var_pattern, code)
-        if vars_found and len(vars_found) >= 3:
-            score += 10
-
-        return min(100, score)
-
-    def analyze_code_trace(self, code: str, output: str) -> CodeTraceAnalysis:
-        """
-        Analyze the code execution trace to verify calculation methodology.
-
-        Args:
-            code: The executed code
-            output: The execution output
-
-        Returns:
-            CodeTraceAnalysis with detailed methodology assessment
-        """
-        libraries = self._extract_imports(code)
-        intermediate = self._extract_print_statements(output)
-        final = self._extract_final_value(output)
-        methodology_score = self._score_methodology(code)
-
-        # Check for vectorization
-        uses_vectorization = any(
-            pattern in code for pattern in ["np.", "pd.", ".apply(", ".map("]
-        )
-
-        # Check for proper types
-        uses_proper_types = "float" in code or "int" in code or "Decimal" in code
-
-        # Check for error handling
-        has_error_handling = "try:" in code and "except" in code
-
-        # Extract calculation steps (lines with assignments)
-        calculation_steps = []
-        for line in code.split("\n"):
-            line = line.strip()
-            if "=" in line and not line.startswith("#") and not line.startswith("import"):
-                calculation_steps.append(line)
-
-        return CodeTraceAnalysis(
-            libraries_used=libraries,
-            calculation_steps=calculation_steps,
-            intermediate_values=intermediate,
-            final_result=final,
-            methodology_score=methodology_score,
-            uses_vectorization=uses_vectorization,
-            uses_proper_types=uses_proper_types,
-            has_error_handling=has_error_handling
-        )
-
-    async def execute_code(
-        self,
+    @mcp.tool
+    def execute_python(
         code: str,
-        timeout_seconds: Optional[int] = None
-    ) -> ExecutionResult:
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
         """
-        Execute Python code in the sandbox.
+        Execute Python code in a sandboxed environment.
+
+        Pre-loaded libraries: numpy (np), pandas (pd), math, datetime, scipy.stats
 
         Args:
             code: Python code to execute
-            timeout_seconds: Execution timeout (defaults to client setting)
+            timeout: Execution timeout in seconds (default: 30)
 
         Returns:
-            ExecutionResult with output and metadata
+            Execution result with stdout, stderr, return value, and defined variables
         """
-        timeout = timeout_seconds or self.execution_timeout_seconds
+        import time
 
-        json_body = {
-            "code": code,
-            "timeout": timeout,
-            "libraries": self.PRELOADED_LIBS,
-        }
+        effective_timeout = timeout or _timeout
+        start_time = time.time()
+
+        stdout_capture = io.StringIO()
+        stderr_capture = io.StringIO()
+
+        namespace = create_execution_namespace()
+
+        result = ExecutionResult(success=False)
 
         try:
-            result = await self._request(
-                "POST",
-                "/execute",
-                "sandbox:execute",
-                json_body=json_body
-            )
+            with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+                # Execute the code
+                exec(code, namespace)
 
-            execution_result = ExecutionResult(
-                execution_id=result.get("execution_id", ""),
-                code=code,
-                stdout=result.get("stdout", ""),
-                stderr=result.get("stderr", ""),
-                return_value=result.get("return_value"),
-                execution_time_ms=result.get("execution_time_ms", 0),
-                success=result.get("success", True),
-                error_type=result.get("error_type"),
-                error_message=result.get("error_message"),
-            )
+            result.success = True
+            result.stdout = stdout_capture.getvalue()
+            result.stderr = stderr_capture.getvalue()
+
+            # Extract user-defined variables (exclude builtins and imports)
+            exclude_keys = {"__builtins__", "np", "numpy", "pd", "pandas", "math", "datetime", "timedelta", "stats"}
+            result.variables = {
+                k: _serialize_value(v)
+                for k, v in namespace.items()
+                if k not in exclude_keys and not k.startswith("_")
+            }
+
+            # Try to get a return value from the last expression
+            if result.variables:
+                last_key = list(result.variables.keys())[-1]
+                result.return_value = result.variables[last_key]
+
+        except SyntaxError as e:
+            result.error_type = "SyntaxError"
+            result.error_message = str(e)
+            result.stderr = stderr_capture.getvalue() + f"\nSyntaxError: {e}"
 
         except Exception as e:
-            execution_result = ExecutionResult(
-                execution_id="",
-                code=code,
-                success=False,
-                error_type="client_error",
-                error_message=str(e),
-            )
+            result.error_type = type(e).__name__
+            result.error_message = str(e)
+            result.stderr = stderr_capture.getvalue() + f"\n{traceback.format_exc()}"
 
-        # Log execution for tracking
-        code_execution = CodeExecution(
-            code=code,
-            output=execution_result.stdout or execution_result.stderr,
-            execution_time_ms=execution_result.execution_time_ms,
-            libraries_used=self._extract_imports(code),
-            success=execution_result.success,
-            error_message=execution_result.error_message,
-        )
-        self.executions.append(code_execution)
+        finally:
+            result.execution_time_ms = int((time.time() - start_time) * 1000)
 
-        logger.info(
-            "sandbox_execution",
-            success=execution_result.success,
-            execution_time_ms=execution_result.execution_time_ms,
-            libraries=code_execution.libraries_used,
-        )
+        return result.model_dump()
 
-        return execution_result
-
-    async def get_execution_trace(self, execution_id: str) -> dict[str, Any]:
+    @mcp.tool
+    def calculate_financial_metric(
+        metric: str,
+        values: dict[str, float],
+    ) -> dict[str, Any]:
         """
-        Get detailed execution trace for a previous execution.
+        Calculate a specific financial metric.
+
+        Available metrics:
+        - gross_margin: (revenue - cogs) / revenue
+        - operating_margin: operating_income / revenue
+        - net_margin: net_income / revenue
+        - roe: net_income / equity
+        - roa: net_income / assets
+        - current_ratio: current_assets / current_liabilities
+        - debt_to_equity: total_debt / equity
+        - pe_ratio: price / eps
+        - ev_to_ebitda: enterprise_value / ebitda
 
         Args:
-            execution_id: ID of the execution to retrieve
+            metric: Name of the metric to calculate
+            values: Dictionary of input values needed for calculation
 
         Returns:
-            Execution trace details
+            Calculated metric value and formula used
         """
-        result = await self._request(
-            "GET",
-            f"/trace/{execution_id}",
-            "sandbox:get_trace",
-            params={"execution_id": execution_id}
-        )
-        return result
+        formulas = {
+            "gross_margin": ("(revenue - cogs) / revenue", ["revenue", "cogs"]),
+            "operating_margin": ("operating_income / revenue", ["operating_income", "revenue"]),
+            "net_margin": ("net_income / revenue", ["net_income", "revenue"]),
+            "roe": ("net_income / equity", ["net_income", "equity"]),
+            "roa": ("net_income / assets", ["net_income", "assets"]),
+            "current_ratio": ("current_assets / current_liabilities", ["current_assets", "current_liabilities"]),
+            "debt_to_equity": ("total_debt / equity", ["total_debt", "equity"]),
+            "pe_ratio": ("price / eps", ["price", "eps"]),
+            "ev_to_ebitda": ("enterprise_value / ebitda", ["enterprise_value", "ebitda"]),
+            "yoy_growth": ("(current - previous) / previous", ["current", "previous"]),
+        }
 
-    def get_executions(self) -> list[CodeExecution]:
-        """Get all code executions performed by this client."""
-        return self.executions
+        if metric not in formulas:
+            return {
+                "error": f"Unknown metric: {metric}",
+                "available_metrics": list(formulas.keys()),
+            }
 
-    def validate_numerical_task_execution(
-        self,
-        task_category: str,
-        agent_response_has_code: bool
-    ) -> tuple[bool, float]:
+        formula, required = formulas[metric]
+
+        # Check required values
+        missing = [k for k in required if k not in values]
+        if missing:
+            return {
+                "error": f"Missing required values: {missing}",
+                "required": required,
+                "provided": list(values.keys()),
+            }
+
+        # Calculate
+        try:
+            result = eval(formula, {"__builtins__": {}}, values)
+            return {
+                "metric": metric,
+                "value": result,
+                "formula": formula,
+                "inputs": {k: values[k] for k in required},
+            }
+        except ZeroDivisionError:
+            return {"error": "Division by zero", "metric": metric}
+        except Exception as e:
+            return {"error": str(e), "metric": metric}
+
+    @mcp.tool
+    def analyze_time_series(
+        data: list[float],
+        operations: list[str],
+    ) -> dict[str, Any]:
         """
-        Validate that numerical tasks used code execution.
+        Perform time series analysis on numerical data.
 
-        For FAB categories requiring numerical reasoning, agents MUST
-        use the sandbox for calculations. Failure to do so results in
-        a 50% penalty on Execution Score.
+        Available operations:
+        - mean, median, std, var
+        - min, max, range
+        - pct_change, cumsum
+        - rolling_mean_5, rolling_mean_10
+        - trend (linear regression slope)
 
         Args:
-            task_category: The FAB task category
-            agent_response_has_code: Whether the agent executed code
+            data: List of numerical values (time series)
+            operations: List of operations to perform
 
         Returns:
-            Tuple of (is_valid, penalty)
+            Results for each requested operation
         """
-        numerical_categories = [
-            "Numerical Reasoning",
-            "Adjustments",
-            "Financial Modeling",
-        ]
+        try:
+            import numpy as np
+        except ImportError:
+            return {"error": "numpy not available"}
 
-        if task_category in numerical_categories:
-            if not agent_response_has_code:
-                logger.warning(
-                    "missing_code_execution",
-                    task_category=task_category,
-                    penalty=0.5
-                )
-                return False, 0.5
+        arr = np.array(data)
+        results: dict[str, Any] = {"data_points": len(data)}
 
-        return True, 0.0
+        for op in operations:
+            try:
+                if op == "mean":
+                    results[op] = float(np.mean(arr))
+                elif op == "median":
+                    results[op] = float(np.median(arr))
+                elif op == "std":
+                    results[op] = float(np.std(arr))
+                elif op == "var":
+                    results[op] = float(np.var(arr))
+                elif op == "min":
+                    results[op] = float(np.min(arr))
+                elif op == "max":
+                    results[op] = float(np.max(arr))
+                elif op == "range":
+                    results[op] = float(np.max(arr) - np.min(arr))
+                elif op == "sum":
+                    results[op] = float(np.sum(arr))
+                elif op == "pct_change":
+                    if len(arr) > 1:
+                        pct = np.diff(arr) / arr[:-1] * 100
+                        results[op] = [float(x) for x in pct]
+                elif op == "cumsum":
+                    results[op] = [float(x) for x in np.cumsum(arr)]
+                elif op.startswith("rolling_mean_"):
+                    window = int(op.split("_")[-1])
+                    if len(arr) >= window:
+                        rolling = np.convolve(arr, np.ones(window)/window, mode='valid')
+                        results[op] = [float(x) for x in rolling]
+                elif op == "trend":
+                    x = np.arange(len(arr))
+                    slope, intercept = np.polyfit(x, arr, 1)
+                    results[op] = {"slope": float(slope), "intercept": float(intercept)}
+                else:
+                    results[op] = {"error": f"Unknown operation: {op}"}
+
+            except Exception as e:
+                results[op] = {"error": str(e)}
+
+        return results
+
+    @mcp.resource("sandbox://help")
+    def help_resource() -> str:
+        """Get help on using the sandbox."""
+        return """
+Python Sandbox MCP Server
+
+Execute Python code with pre-loaded financial libraries.
+
+Pre-loaded libraries:
+- numpy (as np)
+- pandas (as pd)
+- math
+- datetime, timedelta
+- scipy.stats (as stats)
+
+Example usage:
+```python
+# Calculate compound annual growth rate
+initial_value = 1000
+final_value = 1500
+years = 3
+cagr = (final_value / initial_value) ** (1/years) - 1
+print(f"CAGR: {cagr:.2%}")
+```
+
+Available tools:
+- execute_python: Run arbitrary Python code
+- calculate_financial_metric: Calculate specific financial metrics
+- analyze_time_series: Perform statistical analysis on time series data
+""".strip()
+
+    return mcp
+
+
+def _serialize_value(value: Any) -> Any:
+    """Serialize a value for JSON output."""
+    try:
+        import numpy as np
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, (np.integer, np.floating)):
+            return float(value)
+    except ImportError:
+        pass
+
+    try:
+        import pandas as pd
+        if isinstance(value, pd.DataFrame):
+            return value.to_dict()
+        if isinstance(value, pd.Series):
+            return value.to_dict()
+    except ImportError:
+        pass
+
+    if isinstance(value, (int, float, str, bool, type(None))):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_serialize_value(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _serialize_value(v) for k, v in value.items()}
+
+    return str(value)
+
+
+# CLI entry point
+if __name__ == "__main__":
+    server = create_sandbox_server()
+    server.run()

@@ -14,7 +14,7 @@ from typing import Any, Optional
 import structlog
 from pydantic import BaseModel, Field
 
-from mcp_servers.base import BaseMCPClient, MCPConfig
+from mcp_clients.base import BaseMCPClient, MCPConfig
 from cio_agent.models import TemporalViolation, ViolationSeverity
 
 logger = structlog.get_logger()

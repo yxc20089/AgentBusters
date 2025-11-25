@@ -10,10 +10,10 @@ from datetime import datetime
 from typing import Any
 from dataclasses import dataclass, field
 
-from mcp_servers.base import MCPConfig
-from mcp_servers.edgar import MeteredEDGARClient
-from mcp_servers.yahoo_finance import TimeMachineYFinanceClient
-from mcp_servers.sandbox import QuantSandboxClient
+from mcp_clients.base import MCPConfig
+from mcp_clients.edgar import MeteredEDGARClient
+from mcp_clients.yahoo_finance import TimeMachineYFinanceClient
+from mcp_clients.sandbox import QuantSandboxClient
 
 
 @dataclass
