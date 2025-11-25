@@ -3,17 +3,17 @@ Finance Analysis Agent - Main Agent Class
 
 Provides a high-level interface for the Purple Agent that combines
 the A2A protocol implementation with finance analysis capabilities.
+
+Uses in-process MCP servers for controlled competition environment.
 """
 
 import asyncio
-import os
 from datetime import datetime
 from typing import Any
 
 from purple_agent.card import get_agent_card
 from purple_agent.executor import FinanceAgentExecutor
-from purple_agent.tools import FinanceToolkit
-from purple_agent.mcp_tools import MCPFinanceToolkit
+from purple_agent.mcp_toolkit import MCPToolkit
 
 
 class FinanceAnalysisAgent:
@@ -35,10 +35,6 @@ class FinanceAnalysisAgent:
         llm_client: Any = None,
         model: str = "gpt-4o",
         simulation_date: datetime | None = None,
-        use_mcp: bool = True,
-        mcp_edgar_url: str | None = None,
-        mcp_yfinance_url: str | None = None,
-        mcp_sandbox_url: str | None = None,
     ):
         """
         Initialize the Finance Analysis Agent.
@@ -49,17 +45,12 @@ class FinanceAnalysisAgent:
             llm_client: LLM client (OpenAI or Anthropic)
             model: Model identifier
             simulation_date: Optional date for temporal locking
-            use_mcp: Whether to use MCP servers (True) or direct APIs (False)
-            mcp_edgar_url: URL for SEC EDGAR MCP server
-            mcp_yfinance_url: URL for Yahoo Finance MCP server
-            mcp_sandbox_url: URL for Sandbox MCP server
         """
         self.host = host
         self.port = port
         self.llm_client = llm_client
         self.model = model
         self.simulation_date = simulation_date
-        self.use_mcp = use_mcp
 
         # Initialize components
         self.card = get_agent_card(host, port)
@@ -67,22 +58,10 @@ class FinanceAnalysisAgent:
             llm_client=llm_client,
             model=model,
             simulation_date=simulation_date,
-            use_mcp=use_mcp,
-            mcp_edgar_url=mcp_edgar_url,
-            mcp_yfinance_url=mcp_yfinance_url,
-            mcp_sandbox_url=mcp_sandbox_url,
         )
 
-        # Initialize toolkit based on configuration
-        if use_mcp:
-            self.toolkit = MCPFinanceToolkit(
-                edgar_url=mcp_edgar_url or os.environ.get("MCP_EDGAR_URL", "http://localhost:8001"),
-                yfinance_url=mcp_yfinance_url or os.environ.get("MCP_YFINANCE_URL", "http://localhost:8002"),
-                sandbox_url=mcp_sandbox_url or os.environ.get("MCP_SANDBOX_URL", "http://localhost:8003"),
-                simulation_date=simulation_date,
-            )
-        else:
-            self.toolkit = FinanceToolkit(simulation_date)
+        # Always use in-process MCP servers (FastMCP) for controlled environment
+        self.toolkit = MCPToolkit(simulation_date=simulation_date)
 
     async def analyze(self, question: str, ticker: str | None = None) -> str:
         """
@@ -211,10 +190,6 @@ async def create_agent(
     anthropic_api_key: str | None = None,
     model: str | None = None,
     simulation_date: datetime | None = None,
-    use_mcp: bool = True,
-    mcp_edgar_url: str | None = None,
-    mcp_yfinance_url: str | None = None,
-    mcp_sandbox_url: str | None = None,
 ) -> FinanceAnalysisAgent:
     """
     Factory function to create a Finance Analysis Agent.
@@ -226,10 +201,6 @@ async def create_agent(
         anthropic_api_key: Anthropic API key (optional)
         model: Model to use (defaults based on available API key)
         simulation_date: Optional date for temporal locking
-        use_mcp: Whether to use MCP servers (True) or direct APIs (False)
-        mcp_edgar_url: URL for SEC EDGAR MCP server
-        mcp_yfinance_url: URL for Yahoo Finance MCP server
-        mcp_sandbox_url: URL for Sandbox MCP server
 
     Returns:
         Configured FinanceAnalysisAgent instance
@@ -260,8 +231,4 @@ async def create_agent(
         llm_client=llm_client,
         model=default_model or "gpt-4o",
         simulation_date=simulation_date,
-        use_mcp=use_mcp,
-        mcp_edgar_url=mcp_edgar_url,
-        mcp_yfinance_url=mcp_yfinance_url,
-        mcp_sandbox_url=mcp_sandbox_url,
     )

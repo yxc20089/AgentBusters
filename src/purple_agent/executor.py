@@ -3,11 +3,12 @@ Agent Executor for Purple Agent
 
 Implements the A2A AgentExecutor interface to handle incoming
 finance analysis tasks from Green Agents.
+
+Uses in-process MCP servers for controlled competition environment.
 """
 
 import asyncio
 import json
-import os
 import re
 from datetime import datetime
 from typing import Any
@@ -27,9 +28,8 @@ from a2a.types import (
     Role,
 )
 
-# Import both toolkits - MCP-based and fallback
-from purple_agent.tools import FinanceToolkit, FinancialMetrics
-from purple_agent.mcp_tools import MCPFinanceToolkit
+# Import MCP toolkit for in-process MCP servers
+from purple_agent.mcp_toolkit import MCPToolkit
 
 
 class FinanceAgentExecutor(AgentExecutor):
@@ -48,10 +48,6 @@ class FinanceAgentExecutor(AgentExecutor):
         llm_client: Any = None,
         model: str = "gpt-4o",
         simulation_date: datetime | None = None,
-        use_mcp: bool = True,
-        mcp_edgar_url: str | None = None,
-        mcp_yfinance_url: str | None = None,
-        mcp_sandbox_url: str | None = None,
     ):
         """
         Initialize the Finance Agent Executor.
@@ -60,28 +56,13 @@ class FinanceAgentExecutor(AgentExecutor):
             llm_client: LLM client for generating analysis (OpenAI or Anthropic)
             model: Model identifier for LLM calls
             simulation_date: Optional date for temporal locking
-            use_mcp: Whether to use MCP servers for data (True) or direct APIs (False)
-            mcp_edgar_url: URL for SEC EDGAR MCP server
-            mcp_yfinance_url: URL for Yahoo Finance MCP server
-            mcp_sandbox_url: URL for Sandbox MCP server
         """
         self.llm_client = llm_client
         self.model = model
         self.simulation_date = simulation_date
-        self.use_mcp = use_mcp
 
-        # Initialize toolkit based on configuration
-        if use_mcp:
-            self.toolkit = MCPFinanceToolkit(
-                edgar_url=mcp_edgar_url or os.environ.get("MCP_EDGAR_URL", "http://localhost:8001"),
-                yfinance_url=mcp_yfinance_url or os.environ.get("MCP_YFINANCE_URL", "http://localhost:8002"),
-                sandbox_url=mcp_sandbox_url or os.environ.get("MCP_SANDBOX_URL", "http://localhost:8003"),
-                simulation_date=simulation_date,
-            )
-            self.mcp_toolkit = self.toolkit  # Keep reference for MCP-specific features
-        else:
-            self.toolkit = FinanceToolkit(simulation_date)
-            self.mcp_toolkit = None
+        # Always use in-process MCP servers for controlled environment
+        self.toolkit = MCPToolkit(simulation_date=simulation_date)
 
     async def execute(
         self,

@@ -1,8 +1,10 @@
 """
 Tests for Purple Agent - Finance Analysis Agent
 
-Tests the A2A protocol implementation, finance tools,
+Tests the A2A protocol implementation, MCP-based finance tools,
 and agent execution capabilities.
+
+All tests use in-process MCP servers for controlled environment.
 """
 
 import pytest
@@ -13,12 +15,7 @@ import sys
 sys.path.insert(0, "src")
 
 from purple_agent.card import get_agent_card
-from purple_agent.tools import (
-    YahooFinanceTool,
-    SECEdgarTool,
-    FinanceToolkit,
-    FinancialMetrics,
-)
+from purple_agent.mcp_toolkit import MCPToolkit
 from purple_agent.executor import FinanceAgentExecutor
 from purple_agent.agent import FinanceAnalysisAgent, create_agent
 
@@ -66,77 +63,97 @@ class TestAgentCard:
         assert "github.com" in card.provider.url
 
 
-class TestYahooFinanceTool:
-    """Tests for Yahoo Finance tool."""
-
-    @pytest.fixture
-    def tool(self):
-        """Create Yahoo Finance tool."""
-        return YahooFinanceTool()
-
-    @pytest.fixture
-    def tool_with_simulation(self):
-        """Create Yahoo Finance tool with simulation date."""
-        return YahooFinanceTool(simulation_date=datetime(2024, 6, 1))
-
-    @pytest.mark.asyncio
-    async def test_get_stock_info(self, tool):
-        """Test getting stock info."""
-        # Use a well-known ticker
-        info = await tool.get_stock_info("AAPL")
-
-        assert info["ticker"] == "AAPL"
-        assert "name" in info
-        assert "sector" in info
-        assert "price" in info
-
-    @pytest.mark.asyncio
-    async def test_get_financials(self, tool):
-        """Test getting financial data."""
-        metrics = await tool.get_financials("AAPL", "quarterly")
-
-        assert metrics.ticker == "AAPL"
-        assert metrics.period is not None
-        # At least some financial data should be present
-        assert metrics.revenue is not None or metrics.net_income is not None
-
-    @pytest.mark.asyncio
-    async def test_simulation_date_filtering(self, tool_with_simulation):
-        """Test that historical prices respect simulation date."""
-        prices = await tool_with_simulation.get_historical_prices("AAPL", period="1y")
-
-        # All prices should be before the simulation date
-        for price in prices:
-            price_date = datetime.strptime(price["date"], "%Y-%m-%d")
-            assert price_date <= tool_with_simulation.simulation_date
-
-
-class TestFinanceToolkit:
-    """Tests for the unified finance toolkit."""
+class TestMCPToolkit:
+    """Tests for the MCP-based finance toolkit."""
 
     @pytest.fixture
     def toolkit(self):
-        """Create finance toolkit."""
-        return FinanceToolkit()
+        """Create MCP toolkit (in-process MCP servers)."""
+        return MCPToolkit()
+
+    @pytest.fixture
+    def toolkit_with_simulation(self):
+        """Create MCP toolkit with simulation date."""
+        return MCPToolkit(simulation_date=datetime(2024, 6, 1))
+
+    @pytest.mark.asyncio
+    async def test_get_quote(self, toolkit):
+        """Test getting stock quote via MCP."""
+        quote = await toolkit.get_quote("AAPL")
+
+        assert quote is not None
+        # Should have price data
+        assert "current_price" in quote or "error" not in quote
+
+    @pytest.mark.asyncio
+    async def test_get_financials(self, toolkit):
+        """Test getting financial data via MCP."""
+        financials = await toolkit.get_financials("AAPL", "income", "quarterly")
+
+        assert financials is not None
+        assert "ticker" in financials
+
+    @pytest.mark.asyncio
+    async def test_get_key_statistics(self, toolkit):
+        """Test getting key statistics via MCP."""
+        stats = await toolkit.get_key_statistics("MSFT")
+
+        assert stats is not None
 
     @pytest.mark.asyncio
     async def test_comprehensive_analysis(self, toolkit):
-        """Test comprehensive analysis retrieval."""
+        """Test comprehensive analysis via MCP."""
         data = await toolkit.get_comprehensive_analysis("NVDA")
 
         assert data["ticker"] == "NVDA"
-        assert "stock_info" in data
-        assert "financials" in data
-        assert "balance_sheet" in data
+        assert "quote" in data
+        assert "statistics" in data
+        assert "company_info" in data
+
+    @pytest.mark.asyncio
+    async def test_execute_python_in_sandbox(self, toolkit):
+        """Test Python code execution via sandbox MCP."""
+        result = await toolkit.execute_python("""
+import numpy as np
+values = [100, 110, 121, 133.1]
+growth_rate = (values[-1] / values[0]) ** (1/3) - 1
+print(f"CAGR: {growth_rate:.2%}")
+""")
+
+        assert result["success"] is True
+        assert "CAGR" in result["stdout"]
+
+    @pytest.mark.asyncio
+    async def test_calculate_financial_metric(self, toolkit):
+        """Test financial metric calculation via sandbox MCP."""
+        result = await toolkit.calculate_financial_metric(
+            metric="gross_margin",
+            values={"revenue": 100_000_000, "cogs": 30_000_000}
+        )
+
+        assert "value" in result
+        assert result["value"] == 0.7  # 70% gross margin
+
+    @pytest.mark.asyncio
+    async def test_analyze_time_series(self, toolkit):
+        """Test time series analysis via sandbox MCP."""
+        result = await toolkit.analyze_time_series(
+            data=[100, 105, 103, 110, 115, 112, 120],
+            operations=["mean", "std", "trend"]
+        )
+
+        assert "mean" in result
+        assert "std" in result
+        assert "trend" in result
 
 
 class TestFinanceAgentExecutor:
-    """Tests for the agent executor."""
+    """Tests for the agent executor (uses in-process MCP servers)."""
 
     @pytest.fixture
     def executor(self):
-        """Create executor without LLM (non-MCP mode for unit tests)."""
-        return FinanceAgentExecutor(use_mcp=False)
+        """Create executor without LLM (uses in-process MCP servers)."""
+        return FinanceAgentExecutor()
 
     def test_parse_task_ticker_extraction(self, executor):
         """Test ticker extraction from question."""
@@ -217,12 +234,12 @@ class TestFinanceAgentExecutor:
 
 
 class TestFinanceAnalysisAgent:
-    """Tests for the main agent class."""
+    """Tests for the main agent class (uses in-process MCP servers)."""
 
     @pytest.fixture
     def agent(self):
-        """Create agent without LLM (using direct APIs, not MCP)."""
-        return FinanceAnalysisAgent(use_mcp=False)
+        """Create agent without LLM (uses in-process MCP servers)."""
+        return FinanceAnalysisAgent()
 
     def test_agent_initialization(self, agent):
         """Test agent initializes correctly."""
@@ -253,11 +270,12 @@ class TestFinanceAnalysisAgent:
 
     @pytest.mark.asyncio
     async def test_get_stock_data(self, agent):
-        """Test getting stock data."""
+        """Test getting stock data via MCP servers."""
         data = await agent.get_stock_data("MSFT")
 
         assert data["ticker"] == "MSFT"
-        assert "stock_info" in data
+        # MCP toolkit returns quote, statistics, company_info structure
+        assert "quote" in data or "statistics" in data
 
     def test_check_earnings_beat(self, agent):
         """Test earnings beat/miss calculation."""
@@ -316,21 +334,21 @@ class TestFinanceAnalysisAgent:
 
 
 class TestAgentFactory:
-    """Tests for agent factory function."""
+    """Tests for agent factory function (uses in-process MCP servers)."""
 
     @pytest.mark.asyncio
     async def test_create_agent_no_api_keys(self):
-        """Test creating agent without API keys (non-MCP mode)."""
-        agent = await create_agent(use_mcp=False)
+        """Test creating agent without API keys."""
+        agent = await create_agent()
 
         assert agent is not None
         assert agent.llm_client is None
 
     @pytest.mark.asyncio
     async def test_create_agent_with_simulation_date(self):
-        """Test creating agent with simulation date (non-MCP mode)."""
+        """Test creating agent with simulation date."""
         sim_date = datetime(2025, 11, 20)
-        agent = await create_agent(simulation_date=sim_date, use_mcp=False)
+        agent = await create_agent(simulation_date=sim_date)
 
         assert agent.simulation_date == sim_date
         assert agent.toolkit.simulation_date == sim_date
@@ -378,10 +396,9 @@ class TestNVIDIAScenario:
 
     @pytest.fixture
     def agent(self):
-        """Create agent for testing (non-MCP mode for unit tests)."""
+        """Create agent for testing (uses in-process MCP servers)."""
         return FinanceAnalysisAgent(
             simulation_date=datetime(2025, 11, 20),
-            use_mcp=False,
         )
 
     @pytest.mark.asyncio

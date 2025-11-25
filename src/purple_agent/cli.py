@@ -138,60 +138,69 @@ def info(
     ticker: str = typer.Argument(..., help="Stock ticker symbol"),
 ):
     """
-    Get comprehensive stock information.
+    Get comprehensive stock information via MCP servers.
     """
-    from purple_agent.tools import FinanceToolkit
+    from purple_agent.mcp_toolkit import MCPToolkit
 
     async def get_info():
-        toolkit = FinanceToolkit()
+        toolkit = MCPToolkit()
         data = await toolkit.get_comprehensive_analysis(ticker)
 
-        # Display stock info
-        if "stock_info" in data:
-            info = data["stock_info"]
-            table = Table(title=f"{ticker} - Stock Information")
+        # Display quote info
+        if "quote" in data and "error" not in data["quote"]:
+            quote = data["quote"]
+            table = Table(title=f"{ticker} - Stock Quote")
             table.add_column("Metric", style="cyan")
             table.add_column("Value", style="green")
 
-            table.add_row("Name", str(info.get("name", "N/A")))
-            table.add_row("Sector", str(info.get("sector", "N/A")))
-            table.add_row("Industry", str(info.get("industry", "N/A")))
-            table.add_row("Price", f"${info.get('price', 'N/A')}")
-            table.add_row("Market Cap", f"${info.get('market_cap', 'N/A'):,}" if info.get('market_cap') else "N/A")
-            table.add_row("P/E Ratio", str(info.get("pe_ratio", "N/A")))
-            table.add_row("Analyst Rating", str(info.get("analyst_rating", "N/A")))
+            table.add_row("Price", f"${quote.get('current_price', 'N/A')}")
+            table.add_row("Market Cap", f"${quote.get('market_cap', 'N/A'):,}" if quote.get('market_cap') else "N/A")
+            table.add_row("P/E Ratio", str(quote.get("pe_ratio", "N/A")))
+            table.add_row("52W High", f"${quote.get('fifty_two_week_high', 'N/A')}")
+            table.add_row("52W Low", f"${quote.get('fifty_two_week_low', 'N/A')}")
+            table.add_row("Analyst Rating", str(quote.get("analyst_rating", "N/A")))
 
             console.print(table)
 
-        # Display financials
-        if "financials" in data:
-            fin = data["financials"]
-            table = Table(title="Financial Metrics")
+        # Display company info from SEC EDGAR
+        if "company_info" in data and "error" not in data["company_info"]:
+            company = data["company_info"]
+            table = Table(title="Company Information (SEC EDGAR)")
             table.add_column("Metric", style="cyan")
             table.add_column("Value", style="green")
 
-            if fin.get("revenue"):
-                table.add_row("Revenue", f"${fin['revenue']:,.0f}")
-            if fin.get("net_income"):
-                table.add_row("Net Income", f"${fin['net_income']:,.0f}")
-            if fin.get("gross_margin"):
-                table.add_row("Gross Margin", f"{fin['gross_margin']*100:.1f}%")
-            if fin.get("eps"):
-                table.add_row("EPS", f"${fin['eps']:.2f}")
-            if fin.get("revenue_growth_yoy"):
-                table.add_row("Revenue Growth YoY", f"{fin['revenue_growth_yoy']*100:.1f}%")
+            table.add_row("Name", str(company.get("name", "N/A")))
+            table.add_row("CIK", str(company.get("cik", "N/A")))
+            table.add_row("SIC", str(company.get("sic", "N/A")))
 
             console.print(table)
 
-        # Display recent filings
-        if "recent_filings" in data and data["recent_filings"]:
-            table = Table(title="Recent SEC Filings")
-            table.add_column("Form", style="cyan")
-            table.add_column("Date", style="green")
+        # Display key statistics
+        if "statistics" in data and "error" not in data["statistics"]:
+            stats = data["statistics"]
+            table = Table(title="Key Statistics")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green")
 
-            for filing in data["recent_filings"][:5]:
-                if "error" not in filing:
-                    table.add_row(filing.get("form", "N/A"), filing.get("filing_date", "N/A"))
+            if stats.get("beta"):
+                table.add_row("Beta", f"{stats['beta']:.2f}")
+            if stats.get("profit_margin"):
+                table.add_row("Profit Margin", f"{stats['profit_margin']*100:.1f}%")
+            if stats.get("return_on_equity"):
+                table.add_row("ROE", f"{stats['return_on_equity']*100:.1f}%")
+
+            console.print(table)
+
+        # Display recent filing
+        if "recent_filing" in data and "error" not in data["recent_filing"]:
+            filing = data["recent_filing"]
+            table = Table(title="Recent SEC Filing")
+            table.add_column("Field", style="cyan")
+            table.add_column("Value", style="green")
+
+            table.add_row("Form", str(filing.get("form_type", "N/A")))
+            table.add_row("Date", str(filing.get("filing_date", "N/A")))
+            table.add_row("Accession", str(filing.get("accession_number", "N/A")))
 
             console.print(table)
 
