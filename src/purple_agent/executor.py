@@ -1,0 +1,494 @@
+"""
+Agent Executor for Purple Agent
+
+Implements the A2A AgentExecutor interface to handle incoming
+finance analysis tasks from Green Agents.
+"""
+
+import asyncio
+import json
+import os
+import re
+from datetime import datetime
+from typing import Any
+
+from a2a.server.agent_execution.agent_executor import AgentExecutor
+from a2a.server.agent_execution.context import RequestContext
+from a2a.server.events.event_queue import EventQueue
+from a2a.types import (
+    Task,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+    TaskArtifactUpdateEvent,
+    Artifact,
+    TextPart,
+    Message,
+    Role,
+)
+
+# Import both toolkits - MCP-based and fallback
+from purple_agent.tools import FinanceToolkit, FinancialMetrics
+from purple_agent.mcp_tools import MCPFinanceToolkit
+
+
+class FinanceAgentExecutor(AgentExecutor):
+    """
+    Finance Agent Executor implementing the A2A protocol.
+
+    Handles finance analysis tasks including:
+    - Earnings beat/miss analysis
+    - SEC filing analysis
+    - Financial ratio calculation
+    - Investment recommendations
+    """
+
+    def __init__(
+        self,
+        llm_client: Any = None,
+        model: str = "gpt-4o",
+        simulation_date: datetime | None = None,
+        use_mcp: bool = True,
+        mcp_edgar_url: str | None = None,
+        mcp_yfinance_url: str | None = None,
+        mcp_sandbox_url: str | None = None,
+    ):
+        """
+        Initialize the Finance Agent Executor.
+
+        Args:
+            llm_client: LLM client for generating analysis (OpenAI or Anthropic)
+            model: Model identifier for LLM calls
+            simulation_date: Optional date for temporal locking
+            use_mcp: Whether to use MCP servers for data (True) or direct APIs (False)
+            mcp_edgar_url: URL for SEC EDGAR MCP server
+            mcp_yfinance_url: URL for Yahoo Finance MCP server
+            mcp_sandbox_url: URL for Sandbox MCP server
+        """
+        self.llm_client = llm_client
+        self.model = model
+        self.simulation_date = simulation_date
+        self.use_mcp = use_mcp
+
+        # Initialize toolkit based on configuration
+        if use_mcp:
+            self.toolkit = MCPFinanceToolkit(
+                edgar_url=mcp_edgar_url or os.environ.get("MCP_EDGAR_URL", "http://localhost:8001"),
+                yfinance_url=mcp_yfinance_url or os.environ.get("MCP_YFINANCE_URL", "http://localhost:8002"),
+                sandbox_url=mcp_sandbox_url or os.environ.get("MCP_SANDBOX_URL", "http://localhost:8003"),
+                simulation_date=simulation_date,
+            )
+            self.mcp_toolkit = self.toolkit  # Keep reference for MCP-specific features
+        else:
+            self.toolkit = FinanceToolkit(simulation_date)
+            self.mcp_toolkit = None
+
+    async def execute(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> None:
+        """
+        Execute a finance analysis task.
+
+        Args:
+            context: Request context containing the task details
+            event_queue: Queue for publishing task events
+        """
+        task_id = context.message.task_id if context.message else "unknown"
+        user_input = context.get_user_input()
+
+        # Publish working status
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                task_id=task_id,
+                status=TaskStatus(
+                    state=TaskState.working,
+                    message=Message(
+                        role=Role.agent,
+                        parts=[TextPart(text="Analyzing financial data...")],
+                    ),
+                ),
+                final=False,
+            )
+        )
+
+        try:
+            # Parse the task and extract relevant information
+            task_info = self._parse_task(user_input)
+
+            # Gather financial data
+            financial_data = await self._gather_data(task_info)
+
+            # Generate analysis using LLM
+            analysis = await self._generate_analysis(
+                user_input=user_input,
+                task_info=task_info,
+                financial_data=financial_data,
+            )
+
+            # Create response artifact
+            artifact = Artifact(
+                name="financial_analysis",
+                parts=[TextPart(text=analysis)],
+            )
+
+            # Publish artifact
+            await event_queue.enqueue_event(
+                TaskArtifactUpdateEvent(
+                    task_id=task_id,
+                    artifact=artifact,
+                )
+            )
+
+            # Publish completed status
+            await event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    task_id=task_id,
+                    status=TaskStatus(
+                        state=TaskState.completed,
+                        message=Message(
+                            role=Role.agent,
+                            parts=[TextPart(text=analysis)],
+                        ),
+                    ),
+                    final=True,
+                )
+            )
+
+        except Exception as e:
+            # Publish failed status
+            await event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    task_id=task_id,
+                    status=TaskStatus(
+                        state=TaskState.failed,
+                        message=Message(
+                            role=Role.agent,
+                            parts=[TextPart(text=f"Analysis failed: {str(e)}")],
+                        ),
+                    ),
+                    final=True,
+                )
+            )
+
+    async def cancel(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> None:
+        """
+        Cancel an ongoing task.
+
+        Args:
+            context: Request context with task to cancel
+            event_queue: Queue for publishing cancellation event
+        """
+        task_id = context.message.task_id if context.message else "unknown"
+
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                task_id=task_id,
+                status=TaskStatus(
+                    state=TaskState.canceled,
+                    message=Message(
+                        role=Role.agent,
+                        parts=[TextPart(text="Task cancelled by request")],
+                    ),
+                ),
+                final=True,
+            )
+        )
+
+    def _parse_task(self, user_input: str) -> dict[str, Any]:
+        """
+        Parse the user input to extract task information.
+
+        Args:
+            user_input: Raw user input/question
+
+        Returns:
+            Dictionary with parsed task info
+        """
+        task_info: dict[str, Any] = {
+            "raw_input": user_input,
+            "tickers": [],
+            "task_type": "general",
+            "fiscal_year": None,
+            "quarter": None,
+        }
+
+        # Extract ticker symbols (uppercase letters, 1-5 chars)
+        tickers = re.findall(r'\b([A-Z]{1,5})\b', user_input)
+        # Filter common words that might match
+        common_words = {"Q", "FY", "EPS", "PE", "ROE", "YOY", "QOQ", "CEO", "CFO", "SEC", "AI", "US", "GDP"}
+        task_info["tickers"] = [t for t in tickers if t not in common_words]
+
+        # Detect task type
+        user_lower = user_input.lower()
+        if any(word in user_lower for word in ["beat", "miss", "earnings", "expectations"]):
+            task_info["task_type"] = "beat_or_miss"
+        elif any(word in user_lower for word in ["10-k", "10k", "annual report", "sec filing"]):
+            task_info["task_type"] = "sec_filing"
+        elif any(word in user_lower for word in ["ratio", "p/e", "pe ratio", "roe", "roa", "debt"]):
+            task_info["task_type"] = "ratio_calculation"
+        elif any(word in user_lower for word in ["recommend", "buy", "sell", "hold", "rating"]):
+            task_info["task_type"] = "recommendation"
+        elif any(word in user_lower for word in ["revenue", "income", "profit", "margin"]):
+            task_info["task_type"] = "financial_metrics"
+
+        # Extract fiscal year
+        fy_match = re.search(r'FY\s*(\d{4})', user_input, re.IGNORECASE)
+        if fy_match:
+            task_info["fiscal_year"] = int(fy_match.group(1))
+        else:
+            year_match = re.search(r'20\d{2}', user_input)
+            if year_match:
+                task_info["fiscal_year"] = int(year_match.group())
+
+        # Extract quarter
+        q_match = re.search(r'Q(\d)', user_input, re.IGNORECASE)
+        if q_match:
+            task_info["quarter"] = int(q_match.group(1))
+
+        return task_info
+
+    async def _gather_data(self, task_info: dict[str, Any]) -> dict[str, Any]:
+        """
+        Gather financial data based on task requirements.
+
+        Args:
+            task_info: Parsed task information
+
+        Returns:
+            Dictionary with gathered financial data
+        """
+        data: dict[str, Any] = {"tickers": {}}
+
+        for ticker in task_info.get("tickers", []):
+            try:
+                ticker_data = await self.toolkit.get_comprehensive_analysis(ticker)
+                data["tickers"][ticker] = ticker_data
+            except Exception as e:
+                data["tickers"][ticker] = {"error": str(e)}
+
+        return data
+
+    async def _generate_analysis(
+        self,
+        user_input: str,
+        task_info: dict[str, Any],
+        financial_data: dict[str, Any],
+    ) -> str:
+        """
+        Generate financial analysis using LLM.
+
+        Args:
+            user_input: Original user question
+            task_info: Parsed task information
+            financial_data: Gathered financial data
+
+        Returns:
+            Analysis text response
+        """
+        # Build the prompt
+        system_prompt = self._get_system_prompt(task_info["task_type"])
+        user_prompt = self._build_user_prompt(user_input, task_info, financial_data)
+
+        # If no LLM client, return a structured response based on data
+        if self.llm_client is None:
+            return self._generate_fallback_response(task_info, financial_data)
+
+        # Call LLM
+        try:
+            if hasattr(self.llm_client, "chat"):
+                # OpenAI-style client
+                response = await asyncio.to_thread(
+                    lambda: self.llm_client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=0.3,
+                    )
+                )
+                return response.choices[0].message.content
+
+            elif hasattr(self.llm_client, "messages"):
+                # Anthropic-style client
+                response = await asyncio.to_thread(
+                    lambda: self.llm_client.messages.create(
+                        model=self.model,
+                        max_tokens=2000,
+                        system=system_prompt,
+                        messages=[{"role": "user", "content": user_prompt}],
+                    )
+                )
+                return response.content[0].text
+
+        except Exception as e:
+            return f"LLM analysis error: {str(e)}\n\n{self._generate_fallback_response(task_info, financial_data)}"
+
+        return self._generate_fallback_response(task_info, financial_data)
+
+    def _get_system_prompt(self, task_type: str) -> str:
+        """Get system prompt based on task type."""
+        base_prompt = """You are an expert financial analyst providing detailed, accurate analysis.
+Your analysis should be:
+- Data-driven and factual
+- Include specific numbers and metrics
+- Provide clear conclusions
+- Be concise but comprehensive
+
+"""
+        type_specific = {
+            "beat_or_miss": """Focus on:
+- Clear beat/miss determination
+- Actual vs expected figures (revenue, EPS)
+- Key drivers of performance
+- Forward guidance analysis""",
+
+            "sec_filing": """Focus on:
+- Key information from the filing
+- Risk factors and disclosures
+- Management discussion highlights
+- Material changes from prior periods""",
+
+            "ratio_calculation": """Focus on:
+- Accurate ratio calculations
+- Comparison to industry benchmarks
+- Trend analysis
+- What the ratios indicate about financial health""",
+
+            "recommendation": """Focus on:
+- Clear buy/hold/sell recommendation
+- Supporting thesis with data
+- Key risks to consider
+- Target price rationale if applicable""",
+
+            "financial_metrics": """Focus on:
+- Accurate revenue, income, and margin figures
+- Year-over-year and quarter-over-quarter changes
+- Segment breakdown if available
+- Key drivers of changes""",
+        }
+
+        return base_prompt + type_specific.get(task_type, "Provide comprehensive financial analysis.")
+
+    def _build_user_prompt(
+        self,
+        user_input: str,
+        task_info: dict[str, Any],
+        financial_data: dict[str, Any],
+    ) -> str:
+        """Build the user prompt with context."""
+        prompt_parts = [
+            f"Question: {user_input}",
+            "",
+            "Financial Data:",
+        ]
+
+        for ticker, data in financial_data.get("tickers", {}).items():
+            prompt_parts.append(f"\n{ticker}:")
+            if "error" in data:
+                prompt_parts.append(f"  Error: {data['error']}")
+            else:
+                # Stock info
+                if "stock_info" in data:
+                    info = data["stock_info"]
+                    prompt_parts.append(f"  Name: {info.get('name', 'N/A')}")
+                    prompt_parts.append(f"  Sector: {info.get('sector', 'N/A')}")
+                    prompt_parts.append(f"  Price: ${info.get('price', 'N/A')}")
+                    prompt_parts.append(f"  Market Cap: ${info.get('market_cap', 'N/A'):,}" if info.get('market_cap') else "  Market Cap: N/A")
+                    prompt_parts.append(f"  P/E Ratio: {info.get('pe_ratio', 'N/A')}")
+
+                # Financials
+                if "financials" in data:
+                    fin = data["financials"]
+                    prompt_parts.append(f"  Period: {fin.get('period', 'N/A')}")
+                    if fin.get('revenue'):
+                        prompt_parts.append(f"  Revenue: ${fin['revenue']:,.0f}")
+                    if fin.get('net_income'):
+                        prompt_parts.append(f"  Net Income: ${fin['net_income']:,.0f}")
+                    if fin.get('gross_margin'):
+                        prompt_parts.append(f"  Gross Margin: {fin['gross_margin']*100:.1f}%")
+                    if fin.get('eps'):
+                        prompt_parts.append(f"  EPS: ${fin['eps']:.2f}")
+                    if fin.get('revenue_growth_yoy'):
+                        prompt_parts.append(f"  Revenue Growth YoY: {fin['revenue_growth_yoy']*100:.1f}%")
+
+        prompt_parts.extend([
+            "",
+            "Please provide a detailed analysis addressing the question above.",
+        ])
+
+        return "\n".join(prompt_parts)
+
+    def _generate_fallback_response(
+        self,
+        task_info: dict[str, Any],
+        financial_data: dict[str, Any],
+    ) -> str:
+        """Generate a response without LLM based on available data."""
+        response_parts = ["## Financial Analysis\n"]
+
+        for ticker, data in financial_data.get("tickers", {}).items():
+            response_parts.append(f"### {ticker}\n")
+
+            if "error" in data:
+                response_parts.append(f"Error retrieving data: {data['error']}\n")
+                continue
+
+            # Stock info summary
+            if "stock_info" in data:
+                info = data["stock_info"]
+                response_parts.append(f"**{info.get('name', ticker)}**\n")
+                response_parts.append(f"- Sector: {info.get('sector', 'N/A')}")
+                response_parts.append(f"- Industry: {info.get('industry', 'N/A')}")
+                if info.get('price'):
+                    response_parts.append(f"- Current Price: ${info['price']:.2f}")
+                if info.get('market_cap'):
+                    response_parts.append(f"- Market Cap: ${info['market_cap']:,.0f}")
+                response_parts.append("")
+
+            # Financial metrics
+            if "financials" in data:
+                fin = data["financials"]
+                response_parts.append("**Financial Metrics:**")
+                if fin.get('revenue'):
+                    response_parts.append(f"- Revenue: ${fin['revenue']:,.0f}")
+                if fin.get('net_income'):
+                    response_parts.append(f"- Net Income: ${fin['net_income']:,.0f}")
+                if fin.get('gross_margin'):
+                    response_parts.append(f"- Gross Margin: {fin['gross_margin']*100:.1f}%")
+                if fin.get('operating_margin'):
+                    response_parts.append(f"- Operating Margin: {fin['operating_margin']*100:.1f}%")
+                if fin.get('eps'):
+                    response_parts.append(f"- EPS: ${fin['eps']:.2f}")
+                if fin.get('revenue_growth_yoy'):
+                    response_parts.append(f"- Revenue Growth YoY: {fin['revenue_growth_yoy']*100:.1f}%")
+                response_parts.append("")
+
+            # Balance sheet
+            if "balance_sheet" in data:
+                bs = data["balance_sheet"]
+                response_parts.append("**Balance Sheet:**")
+                if bs.get('total_assets'):
+                    response_parts.append(f"- Total Assets: ${bs['total_assets']:,.0f}")
+                if bs.get('total_equity'):
+                    response_parts.append(f"- Total Equity: ${bs['total_equity']:,.0f}")
+                if bs.get('cash'):
+                    response_parts.append(f"- Cash: ${bs['cash']:,.0f}")
+                if bs.get('debt'):
+                    response_parts.append(f"- Debt: ${bs['debt']:,.0f}")
+                response_parts.append("")
+
+        # Task-specific conclusion
+        task_type = task_info.get("task_type", "general")
+        if task_type == "beat_or_miss":
+            response_parts.append("\n**Note:** To determine beat/miss status, compare reported figures against analyst consensus estimates.")
+        elif task_type == "recommendation":
+            response_parts.append("\n**Note:** This is a data summary. Investment recommendations require additional analysis of market conditions, risk factors, and investment objectives.")
+
+        return "\n".join(response_parts)

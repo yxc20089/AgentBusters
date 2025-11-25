@@ -1,0 +1,220 @@
+"""
+CLI for Purple Agent
+
+Provides command-line interface for running the Purple Agent
+A2A server and performing direct analysis tasks.
+"""
+
+import os
+import asyncio
+from datetime import datetime
+from typing import Optional
+
+import typer
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
+app = typer.Typer(
+    name="purple-agent",
+    help="Purple Finance Agent - A2A-compliant finance analysis agent for AgentBeats",
+)
+console = Console()
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host to bind to"),
+    port: int = typer.Option(8001, "--port", "-p", help="Port to listen on"),
+    reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload"),
+    simulation_date: Optional[str] = typer.Option(
+        None, "--simulation-date", "-d", help="Simulation date (YYYY-MM-DD)"
+    ),
+):
+    """
+    Start the Purple Agent A2A server.
+
+    The server implements the A2A protocol and can be discovered
+    by Green Agents for evaluation.
+    """
+    from purple_agent.server import create_app
+    import uvicorn
+
+    # Parse simulation date
+    sim_date = None
+    if simulation_date:
+        try:
+            sim_date = datetime.fromisoformat(simulation_date)
+        except ValueError:
+            console.print(f"[red]Invalid date format: {simulation_date}[/red]")
+            raise typer.Exit(1)
+
+    # Get API keys from environment
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    model = os.environ.get("LLM_MODEL")
+
+    # Create and run app
+    console.print(Panel.fit(
+        f"[bold blue]Purple Finance Agent[/bold blue]\n"
+        f"Host: {host}:{port}\n"
+        f"LLM: {'OpenAI' if openai_key else 'Anthropic' if anthropic_key else 'None (fallback mode)'}\n"
+        f"Simulation Date: {sim_date or 'None (live data)'}"
+    ))
+
+    app_instance = create_app(
+        host=host,
+        port=port,
+        openai_api_key=openai_key,
+        anthropic_api_key=anthropic_key,
+        model=model,
+        simulation_date=sim_date,
+    )
+
+    console.print(f"\n[green]Starting A2A server at http://{host}:{port}[/green]")
+    console.print(f"[dim]Agent Card: http://{host}:{port}/.well-known/agent.json[/dim]\n")
+
+    uvicorn.run(
+        app_instance,
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
+@app.command()
+def analyze(
+    question: str = typer.Argument(..., help="The analysis question"),
+    ticker: Optional[str] = typer.Option(None, "--ticker", "-t", help="Stock ticker"),
+    simulation_date: Optional[str] = typer.Option(
+        None, "--simulation-date", "-d", help="Simulation date (YYYY-MM-DD)"
+    ),
+):
+    """
+    Perform a direct financial analysis.
+
+    This runs analysis locally without starting the A2A server.
+    """
+    from purple_agent.agent import create_agent
+
+    # Parse simulation date
+    sim_date = None
+    if simulation_date:
+        try:
+            sim_date = datetime.fromisoformat(simulation_date)
+        except ValueError:
+            console.print(f"[red]Invalid date format: {simulation_date}[/red]")
+            raise typer.Exit(1)
+
+    # Get API keys
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    model = os.environ.get("LLM_MODEL")
+
+    async def run_analysis():
+        agent = await create_agent(
+            openai_api_key=openai_key,
+            anthropic_api_key=anthropic_key,
+            model=model,
+            simulation_date=sim_date,
+        )
+
+        console.print(Panel.fit(
+            f"[bold cyan]Question:[/bold cyan] {question}\n"
+            f"[dim]Ticker: {ticker or 'Auto-detect'}[/dim]"
+        ))
+
+        console.print("\n[yellow]Analyzing...[/yellow]\n")
+
+        analysis = await agent.analyze(question, ticker)
+
+        console.print(Panel(analysis, title="Analysis Result", border_style="green"))
+
+    asyncio.run(run_analysis())
+
+
+@app.command()
+def info(
+    ticker: str = typer.Argument(..., help="Stock ticker symbol"),
+):
+    """
+    Get comprehensive stock information.
+    """
+    from purple_agent.tools import FinanceToolkit
+
+    async def get_info():
+        toolkit = FinanceToolkit()
+        data = await toolkit.get_comprehensive_analysis(ticker)
+
+        # Display stock info
+        if "stock_info" in data:
+            info = data["stock_info"]
+            table = Table(title=f"{ticker} - Stock Information")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green")
+
+            table.add_row("Name", str(info.get("name", "N/A")))
+            table.add_row("Sector", str(info.get("sector", "N/A")))
+            table.add_row("Industry", str(info.get("industry", "N/A")))
+            table.add_row("Price", f"${info.get('price', 'N/A')}")
+            table.add_row("Market Cap", f"${info.get('market_cap', 'N/A'):,}" if info.get('market_cap') else "N/A")
+            table.add_row("P/E Ratio", str(info.get("pe_ratio", "N/A")))
+            table.add_row("Analyst Rating", str(info.get("analyst_rating", "N/A")))
+
+            console.print(table)
+
+        # Display financials
+        if "financials" in data:
+            fin = data["financials"]
+            table = Table(title="Financial Metrics")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green")
+
+            if fin.get("revenue"):
+                table.add_row("Revenue", f"${fin['revenue']:,.0f}")
+            if fin.get("net_income"):
+                table.add_row("Net Income", f"${fin['net_income']:,.0f}")
+            if fin.get("gross_margin"):
+                table.add_row("Gross Margin", f"{fin['gross_margin']*100:.1f}%")
+            if fin.get("eps"):
+                table.add_row("EPS", f"${fin['eps']:.2f}")
+            if fin.get("revenue_growth_yoy"):
+                table.add_row("Revenue Growth YoY", f"{fin['revenue_growth_yoy']*100:.1f}%")
+
+            console.print(table)
+
+        # Display recent filings
+        if "recent_filings" in data and data["recent_filings"]:
+            table = Table(title="Recent SEC Filings")
+            table.add_column("Form", style="cyan")
+            table.add_column("Date", style="green")
+
+            for filing in data["recent_filings"][:5]:
+                if "error" not in filing:
+                    table.add_row(filing.get("form", "N/A"), filing.get("filing_date", "N/A"))
+
+            console.print(table)
+
+    asyncio.run(get_info())
+
+
+@app.command()
+def card():
+    """
+    Display the Agent Card.
+    """
+    from purple_agent.card import get_agent_card
+    import json
+
+    agent_card = get_agent_card()
+    card_dict = agent_card.model_dump(exclude_none=True)
+
+    console.print(Panel(
+        json.dumps(card_dict, indent=2),
+        title="Agent Card",
+        border_style="blue"
+    ))
+
+
+if __name__ == "__main__":
+    app()

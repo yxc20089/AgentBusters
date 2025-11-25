@@ -68,7 +68,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # CIO-Agent Orchestrator
+  # CIO-Agent Orchestrator (Green Agent / Evaluator)
   cio-agent:
     build:
       context: .
@@ -93,6 +93,26 @@ services:
       - "8080:8080"
     volumes:
       - evaluation-results:/data/results
+    restart: unless-stopped
+
+  # Purple Agent (Finance Analysis Agent under test)
+  purple-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.purple
+    container_name: fab-plus-purple-agent
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+      - SIMULATION_DATE=${SIMULATION_DATE:-}
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
   # PostgreSQL for evaluation storage (optional)

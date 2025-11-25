@@ -38,6 +38,10 @@ dependencies = [
     "structlog>=23.2.0",
     "rich>=13.0.0",
     "typer>=0.9.0",
+    # A2A Protocol Support
+    "a2a-sdk[http-server]>=0.3.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
 ]
 
 [project.optional-dependencies]
@@ -52,6 +56,7 @@ dev = [
 
 [project.scripts]
 cio-agent = "cio_agent.cli:app"
+purple-agent = "purple_agent.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
