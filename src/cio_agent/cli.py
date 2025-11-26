@@ -22,6 +22,8 @@ from cio_agent.task_generator import DynamicTaskGenerator, FABDataset
 from cio_agent.orchestrator import MockAgentClient
 from cio_agent.evaluator import ComprehensiveEvaluator, EvaluationReporter
 from cio_agent.models import TaskCategory, TaskDifficulty
+from cio_agent.a2a_client import A2AHTTPAgentClient
+from purple_agent.service import run_server as run_purple_agent_server
 
 app = typer.Typer(
     name="cio-agent",
@@ -46,6 +48,12 @@ def evaluate(
         "gpt-4o",
         "--model", "-m",
         help="Agent model to simulate"
+    ),
+    purple_endpoint: Optional[str] = typer.Option(
+        None,
+        "--purple-endpoint",
+        help="A2A endpoint for an external purple agent (e.g., http://localhost:8090/a2a)",
+        envvar="PURPLE_ENDPOINT",
     ),
     no_debate: bool = typer.Option(
         False,
@@ -83,7 +91,15 @@ def evaluate(
         # Initialize components
         task_generator = DynamicTaskGenerator()
         evaluator = ComprehensiveEvaluator()
-        agent = MockAgentClient(agent_id="test-agent", model=agent_model)
+        if purple_endpoint:
+            agent = A2AHTTPAgentClient(
+                endpoint=purple_endpoint,
+                agent_id="purple-baseline",
+                sender_id="cio-agent-green",
+                model=agent_model,
+            )
+        else:
+            agent = MockAgentClient(agent_id="test-agent", model=agent_model)
 
         with Progress(
             SpinnerColumn(),
@@ -326,6 +342,50 @@ def batch_evaluate(
         }
         output_file.write_text(json.dumps(output_data, indent=2))
         console.print(f"[green]Results saved to {output_file}[/green]")
+
+
+@app.command("run-purple")
+def run_purple_agent(
+    host: str = typer.Option(
+        "0.0.0.0",
+        "--host",
+        envvar="PURPLE_AGENT_HOST",
+        help="Host to bind the purple agent server",
+    ),
+    port: int = typer.Option(
+        8090,
+        "--port", "-p",
+        envvar="PURPLE_AGENT_PORT",
+        help="Port to bind the purple agent server",
+    ),
+    agent_id: str = typer.Option(
+        "purple-baseline",
+        "--agent-id",
+        envvar="PURPLE_AGENT_ID",
+        help="Agent ID to advertise in A2A messages",
+    ),
+    model: str = typer.Option(
+        "gpt-4o-mini",
+        "--model", "-m",
+        envvar="PURPLE_AGENT_MODEL",
+        help="Model identifier for logging (heuristic responses only)",
+    ),
+):
+    """
+    Run the baseline A2A-compatible Purple Agent HTTP service.
+    """
+
+    async def _run():
+        await run_purple_agent_server(host=host, port=port, agent_id=agent_id, model=model)
+
+    console.print(Panel.fit(
+        f"[bold magenta]Starting Purple Agent[/bold magenta]\n"
+        f"Agent ID: {agent_id}\n"
+        f"Model: {model}\n"
+        f"Listening on: {host}:{port}"
+    ))
+
+    asyncio.run(_run())
 
 
 @app.command()

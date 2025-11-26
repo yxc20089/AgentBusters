@@ -8,7 +8,7 @@ and White/Purple Agents (test agents) using the A2A Protocol.
 import asyncio
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 import structlog
@@ -413,14 +413,14 @@ Risk factors to monitor include competitive dynamics and macro conditions.
             ToolCall(
                 tool_name="sec-edgar-mcp:get_filing",
                 params={"ticker": task.ticker, "form_type": "10-K", "fiscal_year": task.fiscal_year},
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 response_tokens=5000,
                 duration_ms=500,
             ),
             ToolCall(
                 tool_name="yahoo-finance-mcp:get_statistics",
                 params={"ticker": task.ticker},
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 response_tokens=1000,
                 duration_ms=200,
             ),

@@ -264,7 +264,7 @@ class ComprehensiveEvaluator:
     async def run_full_evaluation(
         self,
         task: Task,
-        agent_client: MockAgentClient,
+        agent_client: Any,
         conduct_debate: bool = True,
     ) -> EvaluationResult:
         """
@@ -272,7 +272,7 @@ class ComprehensiveEvaluator:
 
         Args:
             task: The evaluation task
-            agent_client: Client for the agent being evaluated
+            agent_client: Client for the agent being evaluated (mock or A2A HTTP)
             conduct_debate: Whether to conduct adversarial debate
 
         Returns:

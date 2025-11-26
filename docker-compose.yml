@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # MCP Server 1: SEC EDGAR
   sec-edgar-mcp:
@@ -93,6 +91,25 @@ services:
       - "8080:8080"
     volumes:
       - evaluation-results:/data/results
+    restart: unless-stopped
+
+  # Baseline Purple Agent (A2A-compatible demo agent)
+  purple-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fab-plus-purple
+    command: >
+      sh -c "cio-agent run-purple
+      --host 0.0.0.0
+      --port 8090
+      --agent-id ${PURPLE_AGENT_ID:-purple-baseline}
+      --model ${PURPLE_AGENT_MODEL:-gpt-4o-mini}"
+    environment:
+      - PURPLE_AGENT_ID=${PURPLE_AGENT_ID:-purple-baseline}
+      - PURPLE_AGENT_MODEL=${PURPLE_AGENT_MODEL:-gpt-4o-mini}
+    ports:
+      - "8090:8090"
     restart: unless-stopped
 
   # PostgreSQL for evaluation storage (optional)

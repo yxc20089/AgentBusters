@@ -5,7 +5,7 @@ These models define the structure for tasks, agent responses, evaluations,
 and all related data types used throughout the system.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 from pydantic import BaseModel, Field
@@ -172,7 +172,7 @@ class AgentResponse(BaseModel):
     extracted_financials: FinancialData = Field(default_factory=FinancialData)
     code_executions: list[CodeExecution] = Field(default_factory=list)
     tool_calls: list[ToolCall] = Field(default_factory=list)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     execution_time_seconds: float = 0.0
 
 
@@ -183,7 +183,7 @@ class DebateRebuttal(BaseModel):
     defense: str = Field(description="Agent's defense of their thesis")
     new_evidence_cited: list[str] = Field(default_factory=list)
     tool_calls: list[ToolCall] = Field(default_factory=list)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # === Evaluation Models ===
@@ -303,7 +303,7 @@ class EvaluationResult(BaseModel):
     evaluation_id: str
     task_id: str
     agent_id: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Scores
     role_score: RoleScore
@@ -339,7 +339,7 @@ class A2AMessage(BaseModel):
     message_type: A2AMessageType
     sender_id: str
     receiver_id: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     payload: dict[str, Any]
 
     @classmethod
@@ -383,4 +383,34 @@ class A2AMessage(BaseModel):
                 "challenge": counter_argument,
                 "instructions": "Defend your thesis with additional evidence or revise your recommendation."
             }
+        )
+
+    @classmethod
+    def task_response(
+        cls,
+        sender_id: str,
+        receiver_id: str,
+        response: AgentResponse,
+    ) -> "A2AMessage":
+        """Create a task response message."""
+        return cls(
+            message_type=A2AMessageType.TASK_RESPONSE,
+            sender_id=sender_id,
+            receiver_id=receiver_id,
+            payload=response.model_dump(),
+        )
+
+    @classmethod
+    def rebuttal(
+        cls,
+        sender_id: str,
+        receiver_id: str,
+        rebuttal: DebateRebuttal,
+    ) -> "A2AMessage":
+        """Create a rebuttal message."""
+        return cls(
+            message_type=A2AMessageType.REBUTTAL,
+            sender_id=sender_id,
+            receiver_id=receiver_id,
+            payload=rebuttal.model_dump(),
         )

@@ -7,7 +7,7 @@ Tracks all costs incurred during agent evaluation:
 """
 
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import structlog
@@ -24,7 +24,7 @@ class LLMCallRecord(BaseModel):
     input_tokens: int
     output_tokens: int
     cost_usd: float
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     purpose: str = ""  # e.g., "analysis", "debate", "evaluation"
 
 
