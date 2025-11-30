@@ -12,13 +12,17 @@ services:
       - TOKEN_TRACKING_ENABLED=true
       - NOISE_INJECTION_RATIO=0.3
       - TEMPORAL_LOCK_ENABLED=true
+      - FASTMCP_TRANSPORT=http
+    command: >
+      fastmcp run "src/mcp_servers/sec_edgar.py:create_edgar_server"
+      --transport http --host 0.0.0.0 --port 8000
     volumes:
       - edgar-cache:/data/edgar_cache
     ports:
       - "8101:8000"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "curl -s http://localhost:8000/ > /dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -33,13 +37,17 @@ services:
       - YFINANCE_CACHE_DIR=/data/yf_cache
       - TIME_MACHINE_ENABLED=true
       - LOOKAHEAD_DETECTION=true
+      - FASTMCP_TRANSPORT=http
+    command: >
+      fastmcp run "src/mcp_servers/yahoo_finance.py:create_yahoo_finance_server"
+      --transport http --host 0.0.0.0 --port 8000
     volumes:
       - yfinance-cache:/data/yf_cache
     ports:
       - "8102:8000"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "curl -s http://localhost:8000/ > /dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -53,6 +61,10 @@ services:
     environment:
       - EXECUTION_TIMEOUT=30
       - PRELOAD_LIBS=numpy,pandas,scipy,yfinance
+      - FASTMCP_TRANSPORT=http
+    command: >
+      fastmcp run "src/mcp_servers/sandbox.py:create_sandbox_server"
+      --transport http --host 0.0.0.0 --port 8000
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -63,7 +75,7 @@ services:
       - "8103:8000"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "curl -s http://localhost:8000/ > /dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -75,9 +87,9 @@ services:
       dockerfile: Dockerfile
     container_name: fab-plus-orchestrator
     environment:
-      - MCP_EDGAR_URL=http://sec-edgar-mcp:8000
-      - MCP_YFINANCE_URL=http://yahoo-finance-mcp:8000
-      - MCP_SANDBOX_URL=http://mcp-sandbox:8000
+      - MCP_EDGAR_URL=http://sec-edgar-mcp:8000/mcp
+      - MCP_YFINANCE_URL=http://yahoo-finance-mcp:8000/mcp
+      - MCP_SANDBOX_URL=http://mcp-sandbox:8000/mcp
       - A2A_PROTOCOL_VERSION=1.0
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -93,6 +105,8 @@ services:
       - "8080:8080"
     volumes:
       - evaluation-results:/data/results
+      - ./finance-agent/data:/app/data:ro
+      - ./scripts:/app/scripts:ro
     restart: unless-stopped
 
   # Purple Agent (Finance Analysis Agent under test)
@@ -106,11 +120,13 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o}
       - SIMULATION_DATE=${SIMULATION_DATE:-}
-      - MCP_EDGAR_URL=http://sec-edgar-mcp:8000
-      - MCP_YFINANCE_URL=http://yahoo-finance-mcp:8000
-      - MCP_SANDBOX_URL=http://mcp-sandbox:8000
+      - MCP_EDGAR_URL=http://sec-edgar-mcp:8000/mcp
+      - MCP_YFINANCE_URL=http://yahoo-finance-mcp:8000/mcp
+      - MCP_SANDBOX_URL=http://mcp-sandbox:8000/mcp
+    volumes:
+      - ./finance-agent/data:/app/data:ro
     ports:
-      - "8001:8001"
+      - "8010:8001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s

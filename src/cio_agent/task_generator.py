@@ -23,6 +23,7 @@ from cio_agent.models import (
     FinancialData,
     FABQuestionTemplate,
 )
+from cio_agent.datasets.base import DatasetProvider, DatasetExample
 
 logger = structlog.get_logger()
 
@@ -250,8 +251,17 @@ class DynamicTaskGenerator:
         fab_dataset: Optional[FABDataset] = None,
         edgar_client: Optional[Any] = None,  # MeteredEDGARClient
         yfinance_client: Optional[Any] = None,  # TimeMachineYFinanceClient
+        dataset_provider: Optional[DatasetProvider] = None,
     ):
-        self.fab_dataset = fab_dataset or FABDataset.load_sample_questions()
+        self.dataset_provider = dataset_provider
+
+        if dataset_provider:
+            examples: list[DatasetExample] = dataset_provider.load()
+            self.dataset_examples_by_id = {ex.example_id: ex for ex in examples}
+            self.fab_dataset = FABDataset(questions=dataset_provider.to_templates())
+        else:
+            self.dataset_examples_by_id = {}
+            self.fab_dataset = fab_dataset or FABDataset.load_sample_questions()
         self.edgar_client = edgar_client
         self.yfinance_client = yfinance_client
 
@@ -466,8 +476,12 @@ class DynamicTaskGenerator:
             comp_ticker=comp_ticker,
         )
 
-        # Fetch ground truth
-        ground_truth = await self.fetch_ground_truth(new_ticker, new_year, template.metric)
+        # Fetch ground truth (prefer dataset-provided)
+        dataset_example = self.dataset_examples_by_id.get(template.template_id)
+        if dataset_example and dataset_example.ground_truth:
+            ground_truth = dataset_example.ground_truth
+        else:
+            ground_truth = await self.fetch_ground_truth(new_ticker, new_year, template.metric)
 
         # Generate unique task ID
         task_id = f"{template_id}_variant_{new_ticker}_{new_year}"
