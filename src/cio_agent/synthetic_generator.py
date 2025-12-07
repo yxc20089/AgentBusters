@@ -26,7 +26,7 @@ from cio_agent.models import (
     GroundTruth,
     FinancialData,
 )
-from cio_agent.financial_lake import FinancialLake, TICKER_UNIVERSE, TICKER_TO_SECTOR
+from cio_agent.financial_lake import FinancialLake, TICKER_UNIVERSE
 from cio_agent.alphavantage import FundamentalData
 
 logger = structlog.get_logger()
