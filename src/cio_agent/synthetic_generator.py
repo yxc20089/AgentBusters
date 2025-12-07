@@ -599,13 +599,13 @@ class SyntheticTaskGenerator:
         cagr = (end_val / start_val) ** (1 / n_years) - 1
         
         # Determine trend direction
-        if cagr > 0.10:
+        if cagr > CAGR_STRONG_GROWTH_THRESHOLD:
             trend = "strong growth"
-        elif cagr > 0.02:
+        elif cagr > CAGR_MODERATE_GROWTH_THRESHOLD:
             trend = "moderate growth"
-        elif cagr > -0.02:
+        elif cagr > CAGR_STABLE_THRESHOLD:
             trend = "stable"
-        elif cagr > -0.10:
+        elif cagr > CAGR_MODERATE_DECLINE_THRESHOLD:
             trend = "moderate decline"
         else:
             trend = "significant decline"
