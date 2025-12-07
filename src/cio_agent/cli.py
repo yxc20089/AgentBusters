@@ -586,8 +586,11 @@ def generate_synthetic(
             "count": len(questions),
             "questions": [q.model_dump() for q in questions],
         }
-        output_file.write_text(json.dumps(output_data, indent=2, default=str))
-        console.print(f"[green]Questions saved to {output_file}[/green]")
+        try:
+            output_file.write_text(json.dumps(output_data, indent=2, default=str))
+            console.print(f"[green]Questions saved to {output_file}[/green]")
+        except Exception as e:
+            console.print(f"[red]Failed to save questions to {output_file}: {e}[/red]")
 
 
 @app.command()
