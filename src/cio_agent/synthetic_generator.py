@@ -13,7 +13,6 @@ Covers all 9 FAB categories with appropriate prompting strategies.
 import random
 from datetime import datetime
 from typing import Any, Optional
-from enum import Enum
 
 import structlog
 from pydantic import BaseModel, Field
