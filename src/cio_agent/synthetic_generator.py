@@ -141,8 +141,8 @@ class SyntheticTaskGenerator:
     def _generate_question_id(self, category: TaskCategory) -> str:
         """Generate unique question ID."""
         self._question_counter += 1
-        cat_prefix = category.value.replace(" ", "_").upper()[:4]
-        return f"SYN_{cat_prefix}_{self._question_counter:04d}"
+        cat_code = category.value.replace(" ", "_").upper()[:4]
+        return f"SYN_{cat_code}_{self._question_counter:04d}"
     
     # =========================================================================
     # CATEGORY GENERATORS
