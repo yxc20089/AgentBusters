@@ -13,7 +13,7 @@ from a2a.types import (
 )
 
 
-def get_agent_card(host: str = "localhost", port: int = 8001) -> AgentCard:
+def get_agent_card(host: str = "localhost", port: int = 8101) -> AgentCard:
     """
     Create the Agent Card for the Purple Finance Agent.
 

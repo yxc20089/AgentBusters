@@ -10,7 +10,7 @@ Orchestrates the complete evaluation pipeline:
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import structlog
@@ -76,7 +76,7 @@ class ComprehensiveEvaluator:
 
     def _generate_evaluation_id(self) -> str:
         """Generate a unique evaluation ID."""
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         return f"eval_{timestamp}_{uuid.uuid4().hex[:8]}"
 
     def _calculate_role_score(

@@ -25,7 +25,7 @@ from purple_agent.executor import FinanceAgentExecutor
 
 def create_app(
     host: str = "localhost",
-    port: int = 8001,
+    port: int = 8101,
     openai_api_key: str | None = None,
     anthropic_api_key: str | None = None,
     model: str | None = None,
@@ -168,7 +168,7 @@ def create_app(
 
 def run_server(
     host: str = "0.0.0.0",
-    port: int = 8001,
+    port: int = 8101,
     reload: bool = False,
 ):
     """

@@ -208,12 +208,12 @@ class TestCostTracker:
         tracker.add_llm_call("gpt-4o", 1000, 500, "test")
 
         from cio_agent.models import ToolCall
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         tracker.add_tool_call(ToolCall(
             tool_name="test",
             params={},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             response_tokens=5000,
         ))
 

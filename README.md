@@ -18,13 +18,13 @@ python -m venv .venv
 pip install -e ".[dev]"
 
 # 3. Start Green Agent A2A server
-python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9009
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109
 
 # 4. Verify agent card (in another terminal)
-curl http://localhost:9009/.well-known/agent.json
+curl http://localhost:9109/.well-known/agent.json
 
 # 5. Run A2A conformance tests
-python -m pytest tests/test_a2a_green.py -v --agent-url http://localhost:9009
+python -m pytest tests/test_a2a_green.py -v --agent-url http://localhost:9109
 ```
 
 ### Docker Build & Publish
@@ -34,7 +34,7 @@ python -m pytest tests/test_a2a_green.py -v --agent-url http://localhost:9009
 docker build -f Dockerfile.green -t ghcr.io/your-org/cio-agent-green:latest .
 
 # Run locally
-docker run -p 9009:9009 ghcr.io/your-org/cio-agent-green:latest --host 0.0.0.0
+docker run -p 9109:9109 ghcr.io/your-org/cio-agent-green:latest --host 0.0.0.0
 
 # Push to GitHub Container Registry
 docker push ghcr.io/your-org/cio-agent-green:latest
@@ -105,10 +105,10 @@ pip install -e ".[dev]"
 
 ```bash
 # Start A2A server (AgentBeats compatible)
-py -3.13 src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9009
+py -3.13 src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109
 
 # With custom card URL
-py -3.13 src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9009 --card-url https://your-domain.com/
+py -3.13 src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 --card-url https://your-domain.com/
 ```
 
 ### Running the Green Agent (CLI for local testing)
@@ -118,7 +118,7 @@ py -3.13 src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9009 --card-url https
 cio-agent list-tasks
 
 # Run evaluation on a specific task
-cio-agent evaluate --task-id FAB_001 --purple-endpoint http://localhost:9010
+cio-agent evaluate --task-id FAB_001 --purple-endpoint http://localhost:9110
 
 # Run the NVIDIA Q3 FY2026 test
 python scripts/test_nvidia.py
@@ -128,10 +128,10 @@ python scripts/test_nvidia.py
 
 ```bash
 # Start the A2A server
-purple-agent serve --host 0.0.0.0 --port 8001
+purple-agent serve --host 0.0.0.0 --port 8101
 
 # Or use the simple test agent
-py -3.13 src/simple_purple_agent.py --host 0.0.0.0 --port 9010
+py -3.13 src/simple_purple_agent.py --host 0.0.0.0 --port 9110
 
 # Or run a direct analysis
 purple-agent analyze "Did NVIDIA beat or miss Q3 FY2026 expectations?" --ticker NVDA
@@ -143,16 +143,16 @@ The Purple Agent connects to MCP servers for real financial data:
 
 | Server | Default URL | Purpose |
 |--------|-------------|---------|
-| SEC EDGAR MCP | `http://localhost:8001` | SEC filings, XBRL data |
-| Yahoo Finance MCP | `http://localhost:8002` | Market data, statistics |
-| Sandbox MCP | `http://localhost:8003` | Python code execution |
+| SEC EDGAR MCP | `http://localhost:8101` | SEC filings, XBRL data |
+| Yahoo Finance MCP | `http://localhost:8102` | Market data, statistics |
+| Sandbox MCP | `http://localhost:8103` | Python code execution |
 
 Configure via environment variables:
 
 ```bash
-export MCP_EDGAR_URL=http://localhost:8001
-export MCP_YFINANCE_URL=http://localhost:8002
-export MCP_SANDBOX_URL=http://localhost:8003
+export MCP_EDGAR_URL=http://localhost:8101
+export MCP_YFINANCE_URL=http://localhost:8102
+export MCP_SANDBOX_URL=http://localhost:8103
 ```
 
 ## Docker Deployment
@@ -164,10 +164,10 @@ export MCP_SANDBOX_URL=http://localhost:8003
 docker build -f Dockerfile.green -t cio-agent-green .
 
 # Run
-docker run -p 9009:9009 cio-agent-green --host 0.0.0.0 --port 9009
+docker run -p 9109:9109 cio-agent-green --host 0.0.0.0 --port 9109
 
 # With API keys
-docker run -p 9009:9009 -e OPENAI_API_KEY=sk-xxx cio-agent-green --host 0.0.0.0
+docker run -p 9109:9109 -e OPENAI_API_KEY=sk-xxx cio-agent-green --host 0.0.0.0
 ```
 
 ### Full Stack (MCP + Purple + Green)
@@ -186,7 +186,7 @@ docker ps --filter "name=fab-plus"
 docker compose down
 ```
 
-External ports (default compose): Purple `8010->8001`, EDGAR `8001->8000`, YFinance `8002->8000`, Sandbox `8003->8000`.
+External ports (default compose): Purple `9110->9110`, EDGAR `8101->8101`, YFinance `8102->8102`, Sandbox `8103->8103`.
 
 ## Configuration
 
@@ -198,9 +198,9 @@ External ports (default compose): Purple `8010->8001`, EDGAR `8001->8000`, YFina
 | `ANTHROPIC_API_KEY` | Anthropic API key for LLM | - |
 | `LLM_MODEL` | Model to use | `gpt-4o` |
 | `SIMULATION_DATE` | Date for temporal locking (YYYY-MM-DD) | Current date |
-| `MCP_EDGAR_URL` | SEC EDGAR MCP server URL | `http://localhost:8001` |
-| `MCP_YFINANCE_URL` | Yahoo Finance MCP server URL | `http://localhost:8002` |
-| `MCP_SANDBOX_URL` | Sandbox MCP server URL | `http://localhost:8003` |
+| `MCP_EDGAR_URL` | SEC EDGAR MCP server URL | `http://localhost:8101` |
+| `MCP_YFINANCE_URL` | Yahoo Finance MCP server URL | `http://localhost:8102` |
+| `MCP_SANDBOX_URL` | Sandbox MCP server URL | `http://localhost:8103` |
 
 ## Project Structure
 
@@ -271,7 +271,7 @@ Where:
 py -3.13 -m pytest tests/ -v
 
 # Run A2A conformance tests
-py -3.13 -m pytest tests/test_a2a_green.py -v --agent-url http://localhost:9009
+py -3.13 -m pytest tests/test_a2a_green.py -v --agent-url http://localhost:9109
 
 # Run with coverage
 py -3.13 -m pytest tests/ --cov=src --cov-report=html

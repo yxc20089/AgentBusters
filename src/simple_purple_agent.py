@@ -8,6 +8,8 @@ This agent provides basic responses for FAB++ evaluation tasks.
 import argparse
 import json
 import uvicorn
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -202,15 +204,36 @@ def main():
         task_store=InMemoryTaskStore(),
     )
     
-    server = A2AStarletteApplication(
+    server_app = A2AStarletteApplication(
         agent_card=agent_card,
         http_handler=request_handler,
     )
     
+    app = server_app.build()
+    
+    # Add /analyze endpoint for non-A2A compatibility
+    async def analyze_endpoint(request):
+        """Simple analyze endpoint for testing."""
+        try:
+            data = await request.json()
+            question = data.get("question", "")
+            
+            # Return a simple analysis
+            return JSONResponse({
+                "status": "success",
+                "analysis": f"Analysis for: {question}",
+                "recommendation": "HOLD",
+                "confidence": 0.5
+            })
+        except Exception as e:
+            return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+    
+    app.routes.append(Route("/analyze", endpoint=analyze_endpoint, methods=["POST"]))
+    
     print(f"Starting Simple Purple Agent...")
     print(f"  URL: http://{args.host}:{args.port}/")
     
-    uvicorn.run(server.build(), host=args.host, port=args.port)
+    uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == '__main__':

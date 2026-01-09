@@ -29,7 +29,7 @@ class TestAgentCard:
 
         assert card.name == "Purple Finance Agent"
         assert card.version == "1.0.0"
-        assert card.url == "http://localhost:8001/"
+        assert card.url == "http://localhost:8101/"
 
     def test_agent_card_custom_host_port(self):
         """Test agent card with custom host and port."""
@@ -244,7 +244,7 @@ class TestFinanceAnalysisAgent:
     def test_agent_initialization(self, agent):
         """Test agent initializes correctly."""
         assert agent.host == "localhost"
-        assert agent.port == 8001
+        assert agent.port == 8101
         assert agent.card is not None
         assert agent.executor is not None
 

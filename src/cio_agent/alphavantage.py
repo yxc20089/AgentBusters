@@ -12,7 +12,7 @@ Rate limiting and caching included for API efficiency.
 import os
 import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -108,7 +108,7 @@ class FundamentalData(BaseModel):
     annual_cash_flows: list[CashFlowData] = Field(default_factory=list)
     quarterly_cash_flows: list[CashFlowData] = Field(default_factory=list)
     quarterly_earnings: list[EarningsData] = Field(default_factory=list)
-    fetched_at: datetime = Field(default_factory=datetime.utcnow)
+    fetched_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 def _parse_value(value: Any) -> Optional[float]:
@@ -183,7 +183,7 @@ class AlphaVantageClient:
         try:
             data = json.loads(cache_path.read_text())
             cached_at = datetime.fromisoformat(data.get("_cached_at", ""))
-            age_hours = (datetime.utcnow() - cached_at).total_seconds() / 3600
+            age_hours = (datetime.now(timezone.utc) - cached_at).total_seconds() / 3600
             
             if age_hours < self.cache_ttl_hours:
                 logger.debug("alphavantage_cache_hit", ticker=ticker, endpoint=endpoint)
@@ -203,7 +203,7 @@ class AlphaVantageClient:
     def _write_cache(self, ticker: str, endpoint: str, data: dict) -> None:
         """Write data to cache."""
         cache_path = self._get_cache_path(ticker, endpoint)
-        data["_cached_at"] = datetime.utcnow().isoformat()
+        data["_cached_at"] = datetime.now(timezone.utc).isoformat()
         cache_path.write_text(json.dumps(data, indent=2))
     
     async def _fetch(self, params: dict) -> dict:

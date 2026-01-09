@@ -41,7 +41,7 @@ from evaluators.execution import ExecutionEvaluator
 from evaluators.cost_tracker import CostTracker
 
 # Purple agent endpoint for integration tests
-PURPLE_ENDPOINT = os.environ.get("PURPLE_ENDPOINT", "http://localhost:8010")
+PURPLE_ENDPOINT = os.environ.get("PURPLE_ENDPOINT", "http://localhost:9110")
 
 
 # ============================================================================
