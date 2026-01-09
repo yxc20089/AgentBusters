@@ -22,13 +22,13 @@ COPY scripts/ ./scripts/
 RUN uv pip install --system -e ".[dev]"
 
 # Expose A2A port
-EXPOSE 8001
+EXPOSE 9110
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV HOST=0.0.0.0
-ENV PORT=8001
+ENV PORT=9110
 ENV PYTHONPATH=/app/src:/app
 
 # Run the Purple Agent server
-CMD ["purple-agent", "serve", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["purple-agent", "serve", "--host", "0.0.0.0", "--port", "9110"]

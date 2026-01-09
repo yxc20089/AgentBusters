@@ -31,7 +31,7 @@ class FinanceAnalysisAgent:
     def __init__(
         self,
         host: str = "localhost",
-        port: int = 8001,
+        port: int = 8101,
         llm_client: Any = None,
         model: str = "gpt-4o",
         simulation_date: datetime | None = None,
@@ -185,7 +185,7 @@ class FinanceAnalysisAgent:
 
 async def create_agent(
     host: str = "localhost",
-    port: int = 8001,
+    port: int = 8101,
     openai_api_key: str | None = None,
     anthropic_api_key: str | None = None,
     model: str | None = None,

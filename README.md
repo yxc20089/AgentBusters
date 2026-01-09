@@ -83,9 +83,9 @@ The CIO-Agent FAB++ system evaluates AI agents on financial analysis tasks using
 
 ### Prerequisites
 
-- Python 3.11+ (Python 3.13 recommended for AgentBeats)
+- Python 3.13 (recommended for AgentBeats)
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
-- Docker (optional, for full stack deployment)
+- vLLM, Ollama, or LM Studio (for local LLM deployment)
 
 ### Installation
 
@@ -99,16 +99,20 @@ uv sync
 
 # Option 2: Using pip
 pip install -e ".[dev]"
+
+# Option 3: Create .env file from template
+cp .env.example .env
+# Edit .env with your API keys and configuration
 ```
 
 ### Running the Green Agent (A2A Server for AgentBeats)
 
 ```bash
 # Start A2A server (AgentBeats compatible)
-py -3.13 src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109
 
 # With custom card URL
-py -3.13 src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 --card-url https://your-domain.com/
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 --card-url https://your-domain.com/
 ```
 
 ### Running the Green Agent (CLI for local testing)
@@ -131,7 +135,7 @@ python scripts/test_nvidia.py
 purple-agent serve --host 0.0.0.0 --port 8101
 
 # Or use the simple test agent
-py -3.13 src/simple_purple_agent.py --host 0.0.0.0 --port 9110
+python src/simple_purple_agent.py --host 0.0.0.0 --port 9110
 
 # Or run a direct analysis
 purple-agent analyze "Did NVIDIA beat or miss Q3 FY2026 expectations?" --ticker NVDA
@@ -147,12 +151,63 @@ The Purple Agent connects to MCP servers for real financial data:
 | Yahoo Finance MCP | `http://localhost:8102` | Market data, statistics |
 | Sandbox MCP | `http://localhost:8103` | Python code execution |
 
-Configure via environment variables:
+Configure via environment variables or `.env` file:
 
 ```bash
 export MCP_EDGAR_URL=http://localhost:8101
 export MCP_YFINANCE_URL=http://localhost:8102
 export MCP_SANDBOX_URL=http://localhost:8103
+```
+
+Or in `.env`:
+```dotenv
+MCP_EDGAR_URL=http://localhost:8101
+MCP_YFINANCE_URL=http://localhost:8102
+MCP_SANDBOX_URL=http://localhost:8103
+```
+
+## Local Deployment
+
+### Quick Start (Minimal Setup)
+
+```bash
+# Terminal 1: Green Agent
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109
+
+# Terminal 2: Purple Agent  
+python src/simple_purple_agent.py --host 0.0.0.0 --port 9110
+
+# Verify services
+curl http://localhost:9109/.well-known/agent.json
+curl http://localhost:9110/health
+
+# Run tests
+python -m pytest tests/test_e2e.py -v
+```
+
+### With Local vLLM
+
+```bash
+# Configure .env first (see Configuration section)
+# Terminal 1: vLLM
+export LIBRARY_PATH="/chronos_data/huixu/libcuda_stub:$LIBRARY_PATH"
+export LD_LIBRARY_PATH="/chronos_data/huixu/libcuda_stub:$LD_LIBRARY_PATH"
+vllm serve openai/gpt-oss-20b --port 8000
+
+# Terminal 2-3: Start agents (same as above)
+```
+
+### With MCP Servers (Optional)
+
+```bash
+# Terminal 4: SEC EDGAR MCP
+python -m src.mcp_servers.sec_edgar --host 0.0.0.0 --port 8101
+
+# Terminal 5: Yahoo Finance MCP
+python -m src.mcp_servers.yahoo_finance --host 0.0.0.0 --port 8102
+
+# Terminal 6: Sandbox MCP
+python -m src.mcp_servers.sandbox --host 0.0.0.0 --port 8103
 ```
 
 ## Docker Deployment
@@ -170,37 +225,127 @@ docker run -p 9109:9109 cio-agent-green --host 0.0.0.0 --port 9109
 docker run -p 9109:9109 -e OPENAI_API_KEY=sk-xxx cio-agent-green --host 0.0.0.0
 ```
 
-### Full Stack (MCP + Purple + Green)
+### Individual Service Build & Run
 
 ```bash
-# Build all images
-docker compose build
+# Green Agent
+docker build -f Dockerfile -t cio-agent-green .
+docker run -p 9109:9109 cio-agent-green
 
-# Start services
-docker compose up -d
+# Purple Agent
+docker build -f Dockerfile.purple -t purple-agent .
+docker run -p 9110:9110 purple-agent
 
-# Check status
-docker ps --filter "name=fab-plus"
+# MCP Servers
+docker build -f Dockerfile.mcp-edgar -t mcp-edgar .
+docker run -p 8101:8000 mcp-edgar
 
-# Stop services
-docker compose down
+docker build -f Dockerfile.mcp-yahoo -t mcp-yahoo .
+docker run -p 8102:8000 mcp-yahoo
+
+docker build -f Dockerfile.mcp-sandbox -t mcp-sandbox .
+docker run -p 8103:8000 mcp-sandbox
 ```
 
-External ports (default compose): Purple `9110->9110`, EDGAR `8101->8101`, YFinance `8102->8102`, Sandbox `8103->8103`.
+Port mapping: Green Agent `9109`, Purple Agent `9110`, EDGAR `8101`, YFinance `8102`, Sandbox `8103`.
 
 ## Configuration
 
-### Environment Variables
+### Environment Setup with `.env` File
 
-| Variable | Description | Default |
+```bash
+# 1. Create .env from template
+cp .env.example .env
+
+# 2. Edit .env with your LLM configuration
+```
+
+**For local vLLM (gpt-oss-20b):**
+```dotenv
+LLM_PROVIDER=openai
+OPENAI_API_BASE=http://localhost:8000/v1
+OPENAI_API_KEY=dummy
+LLM_MODEL=gpt-oss-20b
+```
+
+**For OpenAI API:**
+```dotenv
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-your-key
+LLM_MODEL=gpt-4o
+```
+
+**For Anthropic API:**
+```dotenv
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-your-key
+LLM_MODEL=claude-3.5-sonnet
+```
+
+**MCP Servers (optional):**
+```dotenv
+MCP_EDGAR_URL=http://localhost:8101
+MCP_YFINANCE_URL=http://localhost:8102
+MCP_SANDBOX_URL=http://localhost:8103
+```
+
+The agents will automatically load `.env` on startup. Alternatively, you can use `export` commands instead of `.env` file.
+
+### Environment Variables Reference
+
+| Variable | Description | Example |
 |----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API key for LLM | - |
-| `ANTHROPIC_API_KEY` | Anthropic API key for LLM | - |
-| `LLM_MODEL` | Model to use | `gpt-4o` |
-| `SIMULATION_DATE` | Date for temporal locking (YYYY-MM-DD) | Current date |
-| `MCP_EDGAR_URL` | SEC EDGAR MCP server URL | `http://localhost:8101` |
-| `MCP_YFINANCE_URL` | Yahoo Finance MCP server URL | `http://localhost:8102` |
-| `MCP_SANDBOX_URL` | Sandbox MCP server URL | `http://localhost:8103` |
+| `LLM_PROVIDER` | LLM provider | `openai`, `anthropic` |
+| `LLM_MODEL` | Model name | `gpt-4o`, `claude-3.5-sonnet`, `gpt-oss-20b` |
+| `OPENAI_API_KEY` | OpenAI API key | `sk-...` |
+| `OPENAI_API_BASE` | Custom API endpoint (for local vLLM) | `http://localhost:8000/v1` |
+| `ANTHROPIC_API_KEY` | Anthropic API key | `sk-ant-...` |
+| `MCP_EDGAR_URL` | SEC EDGAR MCP server | `http://localhost:8101` |
+| `MCP_YFINANCE_URL` | Yahoo Finance MCP server | `http://localhost:8102` |
+| `MCP_SANDBOX_URL` | Sandbox MCP server | `http://localhost:8103` |
+
+## Running with Local LLM (vLLM + gpt-oss-20b)
+
+### 1. Install and Start vLLM
+
+```bash
+# Install vLLM
+pip install vllm
+
+# Start vLLM server (Terminal 1)
+export LIBRARY_PATH="/chronos_data/huixu/libcuda_stub:$LIBRARY_PATH"
+export LD_LIBRARY_PATH="/chronos_data/huixu/libcuda_stub:$LD_LIBRARY_PATH"
+vllm serve openai/gpt-oss-20b --port 8000
+
+# For multi-GPU: add --tensor-parallel-size=2
+```
+
+### 2. Configure .env for Local LLM
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
+```dotenv
+LLM_PROVIDER=openai
+OPENAI_API_BASE=http://localhost:8000/v1
+OPENAI_API_KEY=dummy
+LLM_MODEL=gpt-oss-20b
+```
+
+### 3. Start Agents
+
+```bash
+# Terminal 2: Green Agent
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109
+
+# Terminal 3: Purple Agent
+python src/simple_purple_agent.py --host 0.0.0.0 --port 9110
+
+# Terminal 4: Run tests
+python -m pytest tests/test_e2e.py -v
+```
 
 ## Project Structure
 
@@ -268,13 +413,13 @@ Where:
 
 ```bash
 # Run all tests
-py -3.13 -m pytest tests/ -v
+python -m pytest tests/ -v
 
 # Run A2A conformance tests
-py -3.13 -m pytest tests/test_a2a_green.py -v --agent-url http://localhost:9109
+python -m pytest tests/test_a2a_green.py -v --agent-url http://localhost:9109
 
 # Run with coverage
-py -3.13 -m pytest tests/ --cov=src --cov-report=html
+python -m pytest tests/ --cov=src --cov-report=html
 ```
 
 ## API Reference
@@ -310,7 +455,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 1. Fork the repository
 2. Create a feature branch
-3. Run tests: `py -3.13 -m pytest tests/ -v`
+3. Run tests: `python -m pytest tests/ -v`
 4. Submit a pull request
 
 ## Acknowledgments

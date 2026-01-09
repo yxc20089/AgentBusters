@@ -18,4 +18,4 @@ RUN \
 # Entry point for the Green Agent A2A server
 ENTRYPOINT ["uv", "run", "src/cio_agent/a2a_server.py"]
 CMD ["--host", "0.0.0.0"]
-EXPOSE 9009
+EXPOSE 9109

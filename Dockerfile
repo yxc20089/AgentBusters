@@ -37,4 +37,4 @@ ENV PYTHONPATH=/app/src:/app
 CMD ["cio-agent", "version"]
 
 # Expose port for API (if needed)
-EXPOSE 8080
+EXPOSE 9109

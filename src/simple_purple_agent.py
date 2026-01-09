@@ -8,8 +8,12 @@ This agent provides basic responses for FAB++ evaluation tasks.
 import argparse
 import json
 import uvicorn
+from dotenv import load_dotenv
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+
+# Load environment variables from .env file
+load_dotenv()
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -211,6 +215,15 @@ def main():
     
     app = server_app.build()
     
+    # Add /health endpoint for health checks
+    async def health_endpoint(request):
+        """Health check endpoint."""
+        return JSONResponse({
+            "status": "healthy",
+            "service": "simple-purple-agent",
+            "port": args.port
+        })
+    
     # Add /analyze endpoint for non-A2A compatibility
     async def analyze_endpoint(request):
         """Simple analyze endpoint for testing."""
@@ -228,6 +241,7 @@ def main():
         except Exception as e:
             return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
     
+    app.routes.append(Route("/health", endpoint=health_endpoint, methods=["GET"]))
     app.routes.append(Route("/analyze", endpoint=analyze_endpoint, methods=["POST"]))
     
     print(f"Starting Simple Purple Agent...")
