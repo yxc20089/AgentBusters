@@ -139,17 +139,25 @@ def _parse_rubric(raw: str, row_index: int = -1) -> tuple[list[str], list[str]]:
             required_criteria: list[str] = []
             penalty_conditions: list[str] = []
             for item in data:
-                crit = item.get("criteria") if isinstance(item, dict) else None
+                if not isinstance(item, dict):
+                    continue
+                crit = item.get("criteria")
                 if not crit:
                     continue
-                criterion_type_str = item.get("type") if isinstance(item, dict) else None
-                if criterion_type_str == "required":
+                # Support both 'type' and 'operator' field names (same as JSON path)
+                criterion_type_str = item.get("type") or item.get("operator")
+                if not criterion_type_str:
+                    # Treat items without type as 'required' by default
                     required_criteria.append(crit)
-                elif criterion_type_str == "penalty":
+                    continue
+                # Map operators to types (same as JSON path)
+                if criterion_type_str in ("correctness", "required"):
+                    required_criteria.append(crit)
+                elif criterion_type_str in ("contradiction", "penalty"):
                     penalty_conditions.append(crit)
             return required_criteria, penalty_conditions
-        except Exception:
-            # Final fallback: use raw string
+        except (ValueError, SyntaxError):
+            # Final fallback: use raw string when Python literal parsing fails
             return [raw], []
     except Exception as e:
         logger.warning(f"Row {row_index}: Unexpected error parsing rubric: {e}. Using raw value.")
