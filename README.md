@@ -489,6 +489,31 @@ The agents will automatically load `.env` on startup. Alternatively, you can use
 | `MCP_SANDBOX_URL` | Sandbox MCP server | `http://localhost:8103` |
 | `DATABASE_URL` | SQLite database URL | `sqlite+aiosqlite:///tasks.db` |
 
+### Database Maintenance
+
+The Green Agent uses SQLite for persistent task storage. The database file (`tasks.db`) is created automatically on first use.
+
+**Backup:**
+```bash
+# Simple file copy (stop server first for consistency)
+cp tasks.db tasks.db.backup
+
+# Or with timestamp
+cp tasks.db "tasks_$(date +%Y%m%d_%H%M%S).db"
+```
+
+**Reset database:**
+```bash
+# Delete to start fresh (all task history will be lost)
+rm tasks.db
+```
+
+**Migrations:** The A2A SDK handles schema internally. If you encounter schema errors after upgrading `a2a-sdk`, delete `tasks.db` to regenerate with the new schema.
+
+**Troubleshooting:**
+- "Database is locked" → Ensure only one server instance is running
+- "Disk I/O error" → Check disk space and file permissions
+
 
 ## Project Structure
 

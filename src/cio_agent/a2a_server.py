@@ -147,8 +147,8 @@ def main():
     try:
         engine = create_async_engine(database_url)
         task_store = DatabaseTaskStore(engine)
-        # Note: DatabaseTaskStore automatically handles initialization (e.g., table creation)
-        # when the first task is saved. No explicit initialize() call is needed on startup.
+        # DatabaseTaskStore auto-creates tables on first use (lazy init).
+        # For schema changes, use migrations. See README.md for backup procedures.
     except Exception as e:
         print(f"ERROR: Failed to initialize database task store: {e}")
         print("Check that DATABASE_URL is correctly formatted (e.g., sqlite+aiosqlite:///tasks.db)")
