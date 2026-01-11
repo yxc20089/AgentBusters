@@ -174,45 +174,108 @@ python scripts/run_demo.py
 #### More Useful Commands (Optional)
 
 ```bash
+################################################################################
+# 1. QUICK START - Most Common Commands
+################################################################################
+
 # Purple Agent utilities
 purple-agent info NVDA                    # Pulls quote/statistics/SEC snapshot via MCP
-purple-agent card                        # Prints the Purple Agent Card JSON
+purple-agent card                         # Prints the Purple Agent Card JSON
 
 # Green Evaluator power tools
-cio-agent list-tasks                     # View all FAB++ templates
-cio-agent generate-task random -d 2024-09-01
-cio-agent batch-evaluate --count 5 \
-	--purple-endpoint http://localhost:9110 --date 2024-09-01
+cio-agent list-tasks                      # View all FAB++ templates
+cio-agent lake-status                     # Check Financial Lake cache status
+
+################################################################################
+# 2. RUN EVALUATION (recommended workflow)
+################################################################################
+
+# Step 1: Start Green Agent A2A Server (choose one):
+
+# RECOMMENDED: Multi-dataset config (production-ready)
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 \
+    --eval-config config/eval_quick.yaml   # Quick test (10 examples)
+# Or:
+#   --eval-config config/eval_full.yaml    # Full evaluation (100+ examples)
+
+# Step 2: Trigger evaluation
+python scripts/run_a2a_eval.py --num-tasks 5 -v
+
+# With custom options:
+python scripts/run_a2a_eval.py \
+    --green-url http://localhost:9109 \
+    --purple-url http://localhost:9110 \
+    --num-tasks 100 \
+    --conduct-debate \
+    -o results/eval_output.json
+
+################################################################################
+# 3. EVALUATION RESULTS STORAGE
+################################################################################
+
+# Results are stored in TWO places:
+
+# 1. SQLite Database (persistent, auto-created)
+#    File: tasks.db
+#    Contains: task status, context_id, artifacts (full evaluation results)
+
+# 2. JSON file (optional, via -o flag)
+python scripts/run_a2a_eval.py --num-tasks 10 -o results/eval_output.json
+
+# View stored results from database:
+sqlite3 tasks.db "SELECT artifacts FROM tasks ORDER BY id DESC LIMIT 1;" | python3 -m json.tool
+
+# Query task status by ID:
+curl -X POST http://localhost:9109/ -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"tasks/get","id":"q1","params":{"id":"TASK_ID"}}'
+
+# Reset database (clear all history):
+rm tasks.db
+
+# Result storage comparison:
+# ┌─────────────────────────────┬──────────────────────────────────────────┐
+# │ Method                      │ Results Storage                          │
+# ├─────────────────────────────┼──────────────────────────────────────────┤
+# │ evaluate-synthetic --output │ Saved to JSON file (persistent)          │
+# │ A2A Server                  │ SQLite Database (persistent in tasks.db) │
+# └─────────────────────────────┴──────────────────────────────────────────┘
+
+################################################################################
+# 4. GENERATE SYNTHETIC DATA (optional)
+################################################################################
 
 # Financial Lake + Synthetic benchmark (requires ALPHAVANTAGE_API_KEY)
-# cio-agent harvest --tickers NVDA,AAPL    # Populate local lake cache
-# cio-agent generate-synthetic -n 10 -o /tmp/questions.json
-
 # Rate limiting: Free tier allows 5 calls/min, 25 calls/day
 # Each ticker needs 5 API calls, so harvest 1 ticker at a time
+
 cio-agent harvest --tickers NVDA         # ~1.5 min per ticker
 cio-agent harvest --tickers AAPL         # Run after first completes
 
+# Generate synthetic questions from Financial Lake data
+cio-agent generate-synthetic -n 10 -o data/synthetic_questions/questions.json
+cio-agent verify-questions data/synthetic_questions/questions.json -o /tmp/verify.json
+
 # Troubleshooting: If cache files are empty, delete and re-harvest
 # rm data/alphavantage_cache/AAPL_EARNINGS.json  # Delete empty file
-# cat data/alphavantage_cache/NVDA_EARNINGS.json | head -5  # Check content
-# cio-agent harvest --tickers AAPL --force  # Force re-fetch
+# cio-agent harvest --tickers AAPL --force       # Force re-fetch
 
-# Optional: add more tickers for richer variety
-# cio-agent harvest --tickers AAPL,MSFT,GOOGL
-cio-agent generate-synthetic -n 10 -o /tmp/questions.json
-cio-agent verify-questions /tmp/questions.json -o /tmp/verify.json
-cio-agent lake-status
+################################################################################
+# 5. ALTERNATIVE: Local Testing (no A2A server needed)
+################################################################################
 
-# Evaluate synthetic questions against Purple Agent
+# For quick local testing, use evaluate-synthetic (simpler, faster):
 cio-agent evaluate-synthetic data/synthetic_questions/questions.json \
     --purple-endpoint http://localhost:9110 \
-    --output data/synthetic_questions/results.json
-# Optional: --limit 5 (only evaluate first 5)
-# Optional: --no-debate (skip debate phase, faster)
+    --output data/synthetic_questions/results.json \
+    --limit 5 --no-debate
 
-# Architecture: Local Dev Testing vs AgentBeats Evaluation
-# 
+# This directly calls Purple Agent's /analyze endpoint, no A2A server needed
+# Recommendation: Use this with --output for local dev
+
+################################################################################
+# 6. ARCHITECTURE: Local Dev vs AgentBeats Evaluation
+################################################################################
+
 # Option A: Local Testing (evaluate-synthetic uses HTTP REST, faster)
 # ┌─────────────────────┐    HTTP POST /analyze    ┌───────────┐
 # │   cio-agent CLI     │─────────────────────────►│  Purple   │
@@ -228,8 +291,8 @@ cio-agent evaluate-synthetic data/synthetic_questions/questions.json \
 #                                 ▼
 # ┌─────────────────────────────────────────────────────────────┐
 # │  Green Agent A2A Server (:9109)                             │◄──┐
-# │  --synthetic-questions questions.json                       │   │
-# │  (Loads synthetic questions from JSON file)                 │   │
+# │  --eval-config config/eval_*.yaml                           │   │
+# │  (Loads datasets from config file)                          │   │
 # └───────────────────────────┬─────────────────────────────────┘   │
 #                             │ Evaluates Purple Agent              │
 #                             ▼                                     │
@@ -239,35 +302,19 @@ cio-agent evaluate-synthetic data/synthetic_questions/questions.json \
 #                     └───────────────────┘                  │ (tasks.db) │
 #                                                            └────────────┘
 
-# Run Green Agent A2A server with synthetic questions (for AgentBeats):
-python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 \
-    --synthetic-questions data/synthetic_questions/questions.json
+# Quick testing recommendation:
+# ┌────────────────────────────────────────────────────────────────────────────┐
+# │ Method                      │ Use Case           │ Protocol  │ Speed      │
+# ├────────────────────────────────────────────────────────────────────────────┤
+# │ cio-agent evaluate-synthetic│ Local dev testing  │ HTTP REST │ Fast       │
+# │ A2A Server + run_a2a_eval   │ AgentBeats official│ A2A JSON-RPC│ Full stack│
+# └────────────────────────────────────────────────────────────────────────────┘
 
-# Test A2A evaluation with curl (simulates AgentBeats platform request):
-curl -X POST http://localhost:9109/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "message/send",
-    "id": "test-3",
-    "params": {
-      "message": {
-        "messageId": "msg-003",
-        "role": "user",
-        "parts": [{"type": "text", "text": "{\"participants\": {\"purple_agent\": \"http://localhost:9110\"}, \"config\": {\"num_tasks\": 1}}"}]
-      }
-    }
-  }'
+################################################################################
+# 7. ADVANCED: Raw Curl Testing & Legacy Mode
+################################################################################
 
-# Note: cio-agent list-tasks shows FAB++ templates, not synthetic questions
-# Synthetic questions are loaded by the A2A server and used during evaluation
-
-# IMPORTANT: A2A SDK tracks tasks by session context (not just messageId)
-# Error "Task already in terminal state" occurs because A2A remembers completed tasks in tasks.db.
-# Solution: Use a unique Task ID for each run, or delete the tasks.db file to reset state.
-# For local testing, use evaluate-synthetic instead (no session tracking issues).
-
-# A2A curl with dynamic UUID (use this to avoid "terminal state" error):
+# Test A2A evaluation with curl (alternative to run_a2a_eval.py script):
 curl -X POST http://localhost:9109/ \
   -H "Content-Type: application/json" \
   -d '{
@@ -283,38 +330,34 @@ curl -X POST http://localhost:9109/ \
     }
   }'
 
-# Quick testing recommendation:
-# ┌────────────────────────────────────────────────────────────────────────────┐
-# │ Method                      │ Use Case           │ Protocol  │ Speed      │
-# ├────────────────────────────────────────────────────────────────────────────┤
-# │ cio-agent evaluate-synthetic│ Local dev testing  │ HTTP REST │ Fast       │
-# │ curl / A2A Server           │ AgentBeats official│ A2A JSON-RPC│ Full stack│
-# └────────────────────────────────────────────────────────────────────────────┘
-#
-# For quick local testing, use evaluate-synthetic (simpler, faster):
-cio-agent evaluate-synthetic data/synthetic_questions/questions.json \
-    --purple-endpoint http://localhost:9110 --limit 2 --no-debate
+# NOTE: A2A SDK tracks tasks by session context. 
+# Error "Task already in terminal state" means the task ID was reused.
+# Solution: Use dynamic UUID (shown above), or rm tasks.db to reset.
 
-# This directly calls Purple Agent's /analyze endpoint, no A2A server needed
+# Legacy: Single dataset mode (use --eval-config instead):
+# python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 \
+#     --dataset-type bizfinbench --dataset-path data/BizFinBench.v2 \
+#     --task-type event_logic_reasoning --limit 10
 
-# For AgentBeats production or full A2A protocol testing, use curl/A2A server:
-# - Requires Green Agent A2A server running with --synthetic-questions
-# - Uses full A2A JSON-RPC protocol with streaming
-# - This is what AgentBeats platform will use
-# - Task status stored in memory (InMemoryTaskStore), lost on server restart
-
-# Query A2A task status by ID:
-# curl -X POST http://localhost:9109/ -H "Content-Type: application/json" \
-#   -d '{"jsonrpc":"2.0","method":"tasks/get","id":"q1","params":{"id":"TASK_ID"}}'
-
-# Result storage comparison:
-# ┌─────────────────────────────┬──────────────────────────────────────────┐
-# │ Method                      │ Results Storage                          │
-# ├─────────────────────────────┼──────────────────────────────────────────┤
-# │ evaluate-synthetic --output │ Saved to JSON file (persistent)          │
-# │ A2A Server                  │ SQLite Database (persistent in tasks.db) │
-# └─────────────────────────────┴──────────────────────────────────────────┘
-# Recommendation: Use evaluate-synthetic with --output for local dev
+# Config file example (config/eval_full.yaml):
+# ---
+# name: "FAB++ Full Evaluation"
+# datasets:
+#   - type: synthetic
+#     path: data/synthetic_questions/questions.json
+#     limit: 10
+#   - type: bizfinbench
+#     path: data/BizFinBench.v2
+#     task_types: [event_logic_reasoning, user_sentiment_analysis]
+#     languages: [en, cn]
+#     limit_per_task: 20
+#   - type: public_csv
+#     path: finance-agent/data/public.csv
+#     limit: 100
+# sampling:
+#   strategy: stratified  # Options: sequential, random, stratified, weighted
+#   total_limit: 100
+#   seed: 42
 
 
 # MCP helpers and CSV batch eval

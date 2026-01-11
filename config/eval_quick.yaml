@@ -1,0 +1,36 @@
+# FAB++ Quick Test Configuration
+# Smaller dataset for quick testing
+
+name: "FAB++ Quick Test"
+version: "1.1"
+
+datasets:
+  - type: synthetic
+    path: data/synthetic_questions/questions.json
+    limit: 5
+    shuffle: true
+    weight: 0.5
+
+  - type: bizfinbench
+    path: data/BizFinBench.v2
+    task_types:
+      - event_logic_reasoning
+    languages:
+      - en
+    limit_per_task: 5
+    shuffle: true
+    weight: 1.0
+
+  - type: public_csv
+    path: finance-agent/data/public.csv
+    limit: 10
+    shuffle: true
+    weight: 2.0
+
+sampling:
+  strategy: random
+  total_limit: 10
+  seed: 42
+
+debate: false
+timeout_seconds: 60

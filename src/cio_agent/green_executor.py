@@ -41,16 +41,38 @@ class GreenAgentExecutor(AgentExecutor):
     lifecycle for assessment requests.
     """
     
-    def __init__(self, synthetic_questions: Optional[list[dict]] = None):
+    def __init__(
+        self,
+        eval_config: Optional[str] = None,
+        synthetic_questions: Optional[list[dict]] = None,
+        dataset_type: str = "synthetic",
+        dataset_path: Optional[str] = None,
+        task_type: Optional[str] = None,
+        language: str = "en",
+        limit: Optional[int] = None,
+    ):
         """
         Initialize the executor.
         
         Args:
+            eval_config: Path to evaluation config YAML file (recommended).
+                        When provided, other dataset params are ignored.
             synthetic_questions: Optional list of synthetic questions to use
                                 for evaluation instead of generating new ones.
+            dataset_type: Type of dataset ('synthetic', 'bizfinbench', 'public_csv')
+            dataset_path: Path to dataset directory or file
+            task_type: For BizFinBench, the specific task type to evaluate
+            language: Language for BizFinBench ('en' or 'cn')
+            limit: Optional limit on number of examples
         """
         self.agents: dict[str, GreenAgent] = {}  # context_id to agent instance
+        self.eval_config = eval_config
         self.synthetic_questions = synthetic_questions
+        self.dataset_type = dataset_type
+        self.dataset_path = dataset_path
+        self.task_type = task_type
+        self.language = language
+        self.limit = limit
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """
@@ -79,7 +101,15 @@ class GreenAgentExecutor(AgentExecutor):
         context_id = task.context_id
         agent = self.agents.get(context_id)
         if not agent:
-            agent = GreenAgent(synthetic_questions=self.synthetic_questions)
+            agent = GreenAgent(
+                eval_config=self.eval_config,
+                synthetic_questions=self.synthetic_questions,
+                dataset_type=self.dataset_type,
+                dataset_path=self.dataset_path,
+                task_type=self.task_type,
+                language=self.language,
+                limit=self.limit,
+            )
             self.agents[context_id] = agent
 
         updater = TaskUpdater(event_queue, task.id, context_id)
