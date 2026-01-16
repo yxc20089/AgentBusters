@@ -101,7 +101,6 @@ class UnifiedEvaluationResult:
             "overall_score": {
                 "score": round(self.overall_score.score, 2) if self.overall_score else 0,
                 "max_score": self.overall_score.max_score if self.overall_score else 100,
-                "grade": self.overall_score.grade if self.overall_score else "F",
             },
             "section_scores": {
                 section_name: {

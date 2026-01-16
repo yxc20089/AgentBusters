@@ -121,7 +121,7 @@ class AgentBeatsResultsFormatter:
                 "participant_id": participant_id,
             },
             "results": [{
-                "overall_score": overall_score if overall_score else {"score": score_value * 100, "grade": ""},
+                "overall_score": overall_score if overall_score else {"score": score_value * 100},
                 "section_scores": section_scores,
                 "evaluation_metadata": {
                     "num_tasks": num_tasks,
@@ -194,7 +194,6 @@ class AgentBeatsResultsFormatter:
             "participant_id": participants.get("participant_id", ""),
             "participant_name": participants.get("purple_agent", ""),
             "overall_score": overall_score.get("score", 0),
-            "grade": overall_score.get("grade", ""),
             "accuracy": eval_metadata.get("accuracy", 0),
             "tasks_evaluated": eval_metadata.get("num_tasks", 0),
             "tasks_successful": eval_metadata.get("num_successful", 0),
