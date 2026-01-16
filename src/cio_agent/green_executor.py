@@ -93,13 +93,6 @@ class GreenAgentExecutor(AgentExecutor):
         if not msg:
             raise ServerError(error=InvalidRequestError(message="Missing message in request"))
 
-        # Parse EvalRequest from agentbeats-client
-        request_text = context.get_user_input()
-        try:
-            eval_request = EvalRequest.model_validate_json(request_text)
-        except ValidationError as e:
-            raise ServerError(error=InvalidParamsError(message=f"Invalid request: {e}"))
-
         task = context.current_task
         if task and task.status.state in TERMINAL_STATES:
             raise ServerError(
@@ -114,17 +107,30 @@ class GreenAgentExecutor(AgentExecutor):
 
         context_id = task.context_id
         agent = self.agents.get(context_id)
-        if not agent:
-            agent = GreenAgent(
-                eval_config=self.eval_config,
-                synthetic_questions=self.synthetic_questions,
-                dataset_type=self.dataset_type,
-                dataset_path=self.dataset_path,
-                task_type=self.task_type,
-                language=self.language,
-                limit=self.limit,
-            )
-            self.agents[context_id] = agent
+
+        # Only parse EvalRequest for NEW conversations (no existing agent)
+        # Follow-up messages in the same context don't need parsing
+        if agent:
+            # This is a follow-up message, ignore it (evaluation is already running)
+            return
+
+        # Parse EvalRequest from agentbeats-client (first message only)
+        request_text = context.get_user_input()
+        try:
+            eval_request = EvalRequest.model_validate_json(request_text)
+        except ValidationError as e:
+            raise ServerError(error=InvalidParamsError(message=f"Invalid request: {e}"))
+
+        agent = GreenAgent(
+            eval_config=self.eval_config,
+            synthetic_questions=self.synthetic_questions,
+            dataset_type=self.dataset_type,
+            dataset_path=self.dataset_path,
+            task_type=self.task_type,
+            language=self.language,
+            limit=self.limit,
+        )
+        self.agents[context_id] = agent
 
         updater = TaskUpdater(event_queue, task.id, context_id)
 
