@@ -47,7 +47,7 @@
 \maketitle
 
 \begin{abstract}
-We present CIO-Agent FAB++ (Finance Agent Benchmark Plus Plus), a comprehensive evaluation framework for assessing AI agents on financial analysis tasks. Unlike static benchmarks, FAB++ dynamically generates evaluation tasks across 18 categories spanning fundamental analysis, quantitative reasoning, options trading, and risk management. The system implements a novel multi-dimensional scoring methodology that evaluates agents on macro thesis quality, fundamental accuracy, execution methodology, and adversarial robustness. We introduce the Options Alpha Challenge, a specialized evaluation track that tests agents on Black-Scholes pricing, Greeks analysis, and multi-leg strategy construction. Our framework leverages the Agent-to-Agent (A2A) protocol for standardized communication and Model Context Protocol (MCP) servers for real-time financial data access. Experimental results demonstrate the effectiveness of our evaluation methodology in distinguishing agent capabilities across diverse financial reasoning tasks.
+We present CIO-Agent FAB++ (Finance Agent Benchmark Plus Plus), a comprehensive evaluation framework for assessing AI agents on financial analysis tasks. FAB++ integrates four benchmark datasets---BizFinBench, Public CSV, Synthetic Questions, and Options Alpha---into a unified scoring system with three weighted sections: Knowledge Retrieval (30\%), Analytical Reasoning (35\%), and Options Trading (35\%). The Analytical Reasoning section features 20 olympiad-style finance logic problems spanning capital budgeting, portfolio theory, fixed income, corporate finance, and derivatives. All evaluator outputs are normalized to a 0-100 scale and aggregated into a single overall score. We introduce the Options Alpha Challenge, a specialized track testing Black-Scholes pricing, Greeks analysis, and multi-leg strategy construction with four-dimensional scoring. Our framework leverages the Agent-to-Agent (A2A) protocol for standardized communication and Model Context Protocol (MCP) servers for real-time financial data access. Experimental results on a GPT-4o mini baseline demonstrate 60.44/100 overall score with clear capability patterns: strong knowledge retrieval (83.33) versus weaker analytical reasoning (50.00) and options trading (51.25).
 \end{abstract}
 
 \textbf{Keywords:} AI Agents, Finance Benchmark, Options Trading, Agent Evaluation, A2A Protocol, MCP
@@ -160,80 +160,111 @@ Risk Metrics & 8106 & VaR computation, Sharpe/Sortino ratios, stress testing \\
 
 \section{Evaluation Methodology}
 
-\subsection{Task Categories}
+\subsection{Overview: The Benchmark Router}
 
-FAB++ evaluates agents across 18 categories organized into three tiers:
+FAB++ implements a unified evaluation router that orchestrates tasks from four distinct benchmark datasets, each targeting different financial reasoning capabilities. The router samples questions from each dataset according to a configurable strategy (stratified, random, or sequential) and routes responses to dataset-specific evaluators. All evaluator outputs are then normalized and aggregated into a single overall score.
 
-\subsubsection{Core Finance (6 categories)}
+\begin{figure}[H]
+\centering
+\begin{verbatim}
++------------------------------------------------------------------+
+|                     FAB++ Benchmark Router                        |
++------------------------------------------------------------------+
+|                                                                   |
+|  +------------------+    +------------------+    +---------------+|
+|  | BizFinBench v2   |    | Public CSV       |    | Synthetic     ||
+|  | - Event Logic    |    | - Beat/Miss      |    | - NPV/IRR     ||
+|  | - Quantitative   |    | - Market Analysis|    | - Portfolio   ||
+|  +--------+---------+    +--------+---------+    | - Fixed Income||
+|           |                       |              | - Options     ||
+|           v                       v              | - Corporate   ||
+|  +------------------+    +------------------+    +-------+-------+|
+|  | Exact Match      |    | Rubric-Based     |            |        |
+|  | Evaluator        |    | LLM Evaluator    |            v        |
+|  +--------+---------+    +--------+---------+    +---------------+|
+|           |                       |              | Rubric-Based  ||
+|           |                       |              | LLM Evaluator ||
+|           |                       |              +-------+-------+|
+|           |                       |                      |        |
+|           +----------+------------+----------------------+        |
+|                      |                                            |
+|                      v                                            |
+|           +---------------------+         +------------------+    |
+|           | Score Normalizer    |         | Options Alpha    |    |
+|           | (0-1 -> 0-100)      |         | - Greeks         |    |
+|           +----------+----------+         | - Strategies     |    |
+|                      |                    | - P&L/Risk       |    |
+|                      |                    +--------+---------+    |
+|                      |                             |              |
+|                      |     +-----------------------+              |
+|                      |     |                                      |
+|                      v     v                                      |
+|           +----------------------------------+                    |
+|           |     Unified Scoring Engine       |                    |
+|           | Knowledge(30%) + Analysis(35%)   |                    |
+|           |      + Options(35%) = Overall    |                    |
+|           +----------------------------------+                    |
++------------------------------------------------------------------+
+\end{verbatim}
+\caption{FAB++ Benchmark Router Architecture}
+\label{fig:router}
+\end{figure}
+
+\subsection{Benchmark Datasets}
+
+The router integrates four complementary benchmark datasets:
+
+\subsubsection{BizFinBench v2 (Knowledge Retrieval)}
+A bilingual benchmark from \citet{bizfinbench2025} testing financial fact retrieval and quantitative computation:
+\begin{itemize}
+    \item \textbf{Event Logic Reasoning}: Temporal ordering of financial events
+    \item \textbf{Financial Quantitative Computation}: Precise numerical calculations (e.g., EPS, margins)
+\end{itemize}
+\textit{Evaluator}: Exact match with 1\% tolerance for numerical answers.
+
+\subsubsection{Public CSV (Knowledge Retrieval)}
+Questions derived from the Finance Agent Benchmark \citep{fab2025} public dataset:
 \begin{itemize}
     \item \textbf{Beat or Miss}: Earnings surprise detection against analyst consensus
-    \item \textbf{Macro Analysis}: Economic trend interpretation and market impact
-    \item \textbf{Fundamental Analysis}: Financial statement interpretation
-    \item \textbf{Quantitative Reasoning}: Numerical calculations from financial data
-    \item \textbf{SEC Filing Analysis}: Information extraction from regulatory documents
-    \item \textbf{Trend Analysis}: Historical pattern recognition and forecasting
+    \item \textbf{Market Analysis}: Qualitative interpretation of market events
 \end{itemize}
+\textit{Evaluator}: LLM-based rubric scoring with component weights.
 
-\subsubsection{Options Alpha (6 categories)}
+\subsubsection{Synthetic Questions (Analytical Reasoning)}
+Twenty olympiad-style finance logic problems requiring multi-step reasoning without external data retrieval. Topics include capital budgeting, portfolio theory, fixed income, corporate finance, options, and forex. See Appendix~\ref{sec:questions} for the complete question bank.
 \begin{itemize}
-    \item \textbf{Options Pricing}: Black-Scholes valuation and fair value assessment
-    \item \textbf{Greeks Analysis}: Sensitivity calculations and hedging strategies
-    \item \textbf{Strategy Construction}: Multi-leg options strategies
-    \item \textbf{Volatility Trading}: IV rank/percentile analysis
-    \item \textbf{P\&L Attribution}: Return decomposition by Greek exposure
-    \item \textbf{Risk Management}: VaR-based position sizing
+    \item \textbf{Self-contained}: All information provided in the question
+    \item \textbf{CFA-level difficulty}: Undergraduate to professional curriculum
+    \item \textbf{Definitive answers}: Unambiguous correct solutions for objective scoring
 \end{itemize}
+\textit{Evaluator}: LLM-based rubric scoring (methodology 30\%, calculation 30\%, answer 40\%).
 
-\subsubsection{Advanced (6 categories)}
+\subsubsection{Options Alpha (Options Trading)}
+Specialized evaluation track for derivatives knowledge:
 \begin{itemize}
-    \item \textbf{Copy Trading}: Strategy replication and signal generation
-    \item \textbf{Race to 10M}: Capital growth optimization under constraints
-    \item \textbf{Strategy Defense}: Adversarial robustness testing
-    \item \textbf{Financial Data Description}: Structured data interpretation
-    \item \textbf{Multi-turn Perception}: Context maintenance across interactions
-    \item \textbf{Sentiment Analysis}: Market sentiment extraction
+    \item \textbf{Greeks Analysis}: Delta, gamma, theta, vega calculations
+    \item \textbf{Strategy Construction}: Multi-leg options strategies (spreads, condors, straddles)
+    \item \textbf{P\&L Analysis}: Max profit/loss, breakeven calculations
+    \item \textbf{Risk Management}: Position sizing, hedging strategies
 \end{itemize}
+\textit{Evaluator}: Four-dimensional scoring (P\&L 25\%, Greeks 25\%, Strategy 25\%, Risk 25\%). See Section~\ref{sec:options} for details.
 
-\subsection{Dynamic Task Generation}
+\subsection{Unified Scoring System}
 
-Unlike static benchmarks, FAB++ generates tasks dynamically using templates populated with real financial data:
+\subsubsection{Three-Section Architecture}
 
-\begin{algorithm}[H]
-\caption{Dynamic Task Generation}
-\begin{algorithmic}[1]
-\REQUIRE Template $T$, Financial Lake $\mathcal{F}$, Simulation Date $d$
-\STATE Select ticker $s$ from universe $\mathcal{S}$
-\STATE Lock temporal context to date $d$
-\STATE Retrieve fundamental data $F_s = \mathcal{F}(s, d)$
-\STATE Generate ground truth $G$ from $F_s$
-\STATE Instantiate task $\tau = T(s, F_s, G, d)$
-\STATE Compute rubric criteria $R$ for $\tau$
-\RETURN Task $(\tau, G, R)$
-\end{algorithmic}
-\end{algorithm}
-
-\subsection{Unified Scoring Methodology}
-
-FAB++ implements a unified scoring system that normalizes all evaluator outputs to a 0-100 scale and computes a weighted overall score across three benchmark sections.
-
-\subsubsection{Section-Based Scoring}
-
-The overall score is computed as a weighted combination of three sections:
-
-\begin{equation}
-\text{OverallScore} = 0.30 \cdot S_{\text{knowledge}} + 0.35 \cdot S_{\text{analysis}} + 0.35 \cdot S_{\text{options}}
-\end{equation}
+Tasks are grouped into three weighted sections based on the skills they test:
 
 \begin{table}[H]
 \centering
-\caption{Benchmark Sections and Weights}
+\caption{Benchmark Sections, Datasets, and Weights}
 \label{tab:sections}
 \begin{tabular}{llrl}
 \toprule
-\textbf{Section} & \textbf{Datasets} & \textbf{Weight} & \textbf{Focus} \\
+\textbf{Section} & \textbf{Datasets} & \textbf{Weight} & \textbf{Skills Tested} \\
 \midrule
 Knowledge Retrieval & BizFinBench, Public CSV & 30\% & Data extraction, financial facts \\
-Analytical Reasoning & Synthetic Questions & 35\% & Logic puzzles, calculations \\
+Analytical Reasoning & Synthetic Questions & 35\% & Logic, multi-step calculations \\
 Options Trading & Options Alpha & 35\% & Derivatives, Greeks, strategies \\
 \bottomrule
 \end{tabular}
@@ -241,37 +272,67 @@ Options Trading & Options Alpha & 35\% & Derivatives, Greeks, strategies \\
 
 \subsubsection{Score Normalization}
 
-Different evaluators produce scores on different scales. We normalize all scores to 0-100:
+Different evaluators produce scores on different scales. All scores are normalized to 0-100 before aggregation:
 
 \begin{table}[H]
 \centering
-\caption{Score Normalization Rules}
+\caption{Score Normalization by Dataset}
 \label{tab:normalization}
-\begin{tabular}{lll}
+\begin{tabular}{llll}
 \toprule
-\textbf{Evaluator} & \textbf{Input Range} & \textbf{Normalization} \\
+\textbf{Dataset} & \textbf{Raw Range} & \textbf{Normalization} & \textbf{Section} \\
 \midrule
-BizFinBench & 0.0--1.0 & $\text{score} \times 100$ \\
-Public CSV & 0.0--1.0 & $\text{score} \times 100$ \\
-Synthetic & 0.0--1.0 & $\text{score} \times 100$ \\
-Options Alpha & 0--100 & No change \\
+BizFinBench & 0.0--1.0 & $\text{score} \times 100$ & Knowledge \\
+Public CSV & 0.0--1.0 & $\text{score} \times 100$ & Knowledge \\
+Synthetic & 0.0--1.0 & $\text{score} \times 100$ & Analysis \\
+Options Alpha & 0--100 & No change & Options \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsubsection{Dynamic Weight Redistribution}
+\subsubsection{Final Score Calculation}
 
-When some sections have no tasks (e.g., if synthetic questions are disabled), weights are redistributed proportionally among active sections:
+The overall score is computed in three steps:
 
+\textbf{Step 1: Section Scores.} For each section $s$, compute the mean normalized score across all tasks in that section:
 \begin{equation}
-w'_i = \frac{w_i}{\sum_{j \in \text{active}} w_j}
+S_s = \frac{1}{|T_s|} \sum_{t \in T_s} \text{normalize}(\text{score}_t)
 \end{equation}
 
-This ensures the overall score remains meaningful regardless of which datasets are included in evaluation.
+\textbf{Step 2: Weight Redistribution.} If any section has no tasks, redistribute weights proportionally:
+\begin{equation}
+w'_s = \frac{w_s}{\sum_{j \in \text{active}} w_j}
+\end{equation}
 
-\subsubsection{Adversarial Debate}
+\textbf{Step 3: Weighted Aggregation.} Compute the final overall score:
+\begin{equation}
+\text{OverallScore} = \sum_{s \in \text{active}} w'_s \cdot S_s
+\end{equation}
 
-We introduce adversarial debate to test agent conviction:
+With all sections active and default weights:
+\begin{equation}
+\text{OverallScore} = 0.30 \cdot S_{\text{knowledge}} + 0.35 \cdot S_{\text{analysis}} + 0.35 \cdot S_{\text{options}}
+\end{equation}
+
+\subsubsection{Example Calculation}
+
+Given the following section scores from an evaluation run:
+\begin{itemize}
+    \item Knowledge Retrieval: 83.33 (from 6 tasks)
+    \item Analytical Reasoning: 50.00 (from 2 tasks)
+    \item Options Trading: 51.25 (from 2 tasks)
+\end{itemize}
+
+The overall score is:
+\begin{align}
+\text{OverallScore} &= 0.30 \times 83.33 + 0.35 \times 50.00 + 0.35 \times 51.25 \\
+&= 25.00 + 17.50 + 17.94 \\
+&= 60.44
+\end{align}
+
+\subsection{Optional: Adversarial Debate}
+
+FAB++ supports an optional adversarial debate mode to test agent conviction:
 
 \begin{algorithm}[H]
 \caption{Adversarial Debate Protocol}
@@ -285,16 +346,10 @@ We introduce adversarial debate to test agent conviction:
 \end{algorithmic}
 \end{algorithm}
 
-\subsubsection{Alpha Score}
-
-The final Alpha Score combines all dimensions:
-\begin{equation}
-\alpha = \frac{\text{RoleScore} \times \text{DebateMultiplier}}{\ln(1 + \text{Cost}) \times (1 + \text{LookaheadPenalty})}
-\end{equation}
-
-This formulation rewards accurate, robust responses while penalizing expensive computation and temporal violations.
+When debate is enabled, the section score is adjusted by the debate multiplier before aggregation.
 
 \section{Options Alpha Challenge}
+\label{sec:options}
 
 \subsection{Black-Scholes Implementation}
 
@@ -770,8 +825,9 @@ sampling:
 \end{lstlisting}
 
 \section{Complete Synthetic Question Bank}
+\label{sec:questions}
 
-The following 22 questions comprise the Analytical Reasoning section. Questions are organized by topic with difficulty ratings (E=Easy, H=Hard, X=Expert).
+The following 20 questions comprise the Analytical Reasoning section. Questions are organized by topic with difficulty ratings (E=Easy, H=Hard, X=Expert).
 
 \subsection{Data Retrieval Questions (2)}
 
