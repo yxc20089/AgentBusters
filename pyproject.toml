@@ -39,11 +39,11 @@ dependencies = [
     "rich>=13.0.0",
     "typer>=0.9.0",
     # A2A Protocol Support (updated for AgentBeats compatibility)
-    "a2a-sdk[http-server,sql]>=0.3.20",
+    # Note: removed sql extra and aiosqlite to use in-memory task storage (avoids SQLite conflicts)
+    "a2a-sdk[http-server]>=0.3.20",
     "fastapi>=0.100.0",
     "uvicorn>=0.38.0",
-    "aiosqlite>=0.19.0",
-    "sqlalchemy>=2.0.0",  # SQLAlchemy async support (sqlalchemy.ext.asyncio)
+    "sqlalchemy>=2.0.0",
     # MCP Protocol Support
     "fastmcp>=2.0.0",
     # HuggingFace datasets for dynamic benchmark retrieval
