@@ -197,7 +197,7 @@ Return JSON only:
             if not data:
                 return None
         except Exception as e:
-            logger.warning("llm_bizfinbench_failed", error=str(e))
+            logger.warning("llm_bizfinbench_failed: %s", e)
             return None
 
         correct = coerce_bool(data.get("correct"))

@@ -221,7 +221,7 @@ Return JSON only:
             if not data or "items" not in data:
                 return None
         except Exception as e:
-            logger.warning("llm_public_csv_failed", error=str(e))
+            logger.warning("llm_public_csv_failed: %s", e)
             return None
 
         items = data.get("items", [])
