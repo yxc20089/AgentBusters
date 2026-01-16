@@ -1,0 +1,68 @@
+name: Build and Push Docker Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_green:
+        description: 'Build green agent'
+        type: boolean
+        default: true
+      build_purple:
+        description: 'Build purple agent'
+        type: boolean
+        default: true
+
+jobs:
+  build-green:
+    if: ${{ inputs.build_green }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push green agent
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.green
+          push: true
+          tags: ghcr.io/yxc20089/agentbusters-green:latest
+          platforms: linux/amd64
+
+  build-purple:
+    if: ${{ inputs.build_purple }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push purple agent
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.purple
+          push: true
+          tags: ghcr.io/yxc20089/agentbusters-purple:latest
+          platforms: linux/amd64
