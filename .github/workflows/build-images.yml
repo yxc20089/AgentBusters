@@ -39,6 +39,7 @@ jobs:
           push: true
           tags: ghcr.io/yxc20089/agentbusters-green:latest
           platforms: linux/amd64
+          no-cache: true
 
   build-purple:
     if: ${{ inputs.build_purple }}
