@@ -1,0 +1,34 @@
+# Large data files - not needed in Docker images
+data/
+finance-agent/
+
+# Git
+.git/
+.gitattributes
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# Tests and docs
+tests/
+docs/
+paper/
+*.md
+!README.md
+
+# Misc
+.env
+.env.*
+*.log
+.DS_Store
