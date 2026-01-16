@@ -157,8 +157,8 @@ def create_app(
                     content={"error": "Question is required"},
                 )
 
-            # Parse and analyze
-            task_info = executor._parse_task(question)
+            # Parse and analyze (LLM-based classification)
+            task_info = await executor._parse_task(question)
             if ticker and ticker not in task_info["tickers"]:
                 task_info["tickers"] = [ticker] + task_info["tickers"]
 

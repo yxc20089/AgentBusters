@@ -77,8 +77,8 @@ class FinanceAnalysisAgent:
         Returns:
             Analysis response string
         """
-        # Parse task info
-        task_info = self.executor._parse_task(question)
+        # Parse task info (LLM-based classification)
+        task_info = await self.executor._parse_task(question)
 
         # Override ticker if provided
         if ticker and ticker not in task_info["tickers"]:

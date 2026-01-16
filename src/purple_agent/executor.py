@@ -109,8 +109,8 @@ class FinanceAgentExecutor(AgentExecutor):
         )
 
         try:
-            # Parse the task and extract relevant information
-            task_info = self._parse_task(user_input)
+            # Parse the task and extract relevant information (LLM + keyword fallback)
+            task_info = await self._parse_task(user_input)
 
             # Gather financial data
             financial_data = await self._gather_data(task_info)
@@ -203,9 +203,147 @@ class FinanceAgentExecutor(AgentExecutor):
             )
         )
 
-    def _parse_task(self, user_input: str) -> dict[str, Any]:
+    # Valid task types for classification
+    VALID_TASK_TYPES = [
+        "options_pricing",      # Black-Scholes, option valuation
+        "options_greeks",       # Delta, gamma, theta, vega analysis
+        "options_strategy",     # Iron condor, straddle, spreads
+        "options_volatility",   # IV analysis, vol trading
+        "options_risk",         # VaR, position sizing, stress tests
+        "options_pnl",          # P&L attribution, decomposition
+        "options_general",      # Other options questions
+        "beat_or_miss",         # Earnings beat/miss analysis
+        "sec_filing",           # 10-K, 10-Q analysis
+        "ratio_calculation",    # Financial ratios (P/E, ROE, etc.)
+        "recommendation",       # Buy/sell/hold recommendations
+        "financial_metrics",    # Revenue, income, margins
+        "event_logic",          # Event-driven reasoning (BizFinBench)
+        "quantitative",         # Quantitative computation (BizFinBench)
+        "general",              # General financial questions
+    ]
+
+    async def _classify_task_with_llm(self, user_input: str) -> str | None:
+        """
+        Use LLM to classify the task type.
+
+        Args:
+            user_input: The user's question
+
+        Returns:
+            Classified task type or None if classification fails
+        """
+        if self.llm_client is None:
+            return None
+
+        classification_prompt = f"""Classify this financial question into exactly ONE of these task types:
+
+TASK TYPES:
+- options_pricing: Option valuation, Black-Scholes calculations, fair value
+- options_greeks: Delta, gamma, theta, vega calculations, hedging with Greeks
+- options_strategy: Building strategies like iron condor, straddle, spreads, butterfly
+- options_volatility: Implied volatility analysis, IV rank, vol trading
+- options_risk: VaR, position sizing, stress testing, risk management
+- options_pnl: P&L attribution, profit/loss decomposition by Greeks
+- options_general: Other options-related questions
+- beat_or_miss: Earnings beat/miss analysis, actual vs expected
+- sec_filing: SEC filing analysis (10-K, 10-Q, 8-K)
+- ratio_calculation: Financial ratio calculations (P/E, ROE, ROA, debt ratios)
+- recommendation: Investment recommendations (buy/sell/hold)
+- financial_metrics: Revenue, income, profit margin analysis
+- event_logic: Event-driven reasoning, cause-effect analysis
+- quantitative: Numerical calculations, quantitative finance
+- general: General financial questions
+
+QUESTION: {user_input[:500]}
+
+Respond with ONLY the task type (e.g., "options_pricing"). Nothing else."""
+
+        try:
+            if hasattr(self.llm_client, "chat"):
+                # OpenAI-style client
+                response = await asyncio.to_thread(
+                    lambda: self.llm_client.chat.completions.create(
+                        model=self.model,
+                        messages=[{"role": "user", "content": classification_prompt}],
+                        temperature=0,
+                        max_tokens=20,
+                    )
+                )
+                task_type = response.choices[0].message.content.strip().lower()
+            elif hasattr(self.llm_client, "messages"):
+                # Anthropic-style client
+                response = await asyncio.to_thread(
+                    lambda: self.llm_client.messages.create(
+                        model=self.model,
+                        max_tokens=20,
+                        messages=[{"role": "user", "content": classification_prompt}],
+                    )
+                )
+                task_type = response.content[0].text.strip().lower()
+            else:
+                return None
+
+            # Validate the response
+            if task_type in self.VALID_TASK_TYPES:
+                return task_type
+            # Try to extract valid type from response
+            for valid_type in self.VALID_TASK_TYPES:
+                if valid_type in task_type:
+                    return valid_type
+            return None
+
+        except Exception:
+            return None
+
+    def _classify_task_with_keywords(self, user_input: str) -> str:
+        """
+        Fallback keyword-based task classification.
+
+        Args:
+            user_input: The user's question
+
+        Returns:
+            Classified task type
+        """
+        user_lower = user_input.lower()
+
+        # Check for options trading tasks first (more specific)
+        if any(word in user_lower for word in self.OPTIONS_KEYWORDS):
+            if any(word in user_lower for word in ["iron condor", "straddle", "strangle", "spread", "butterfly", "construct", "build", "design"]):
+                return "options_strategy"
+            elif any(word in user_lower for word in ["delta", "gamma", "theta", "vega", "greeks", "hedge", "neutral"]):
+                return "options_greeks"
+            elif any(word in user_lower for word in ["volatility", "iv", "implied volatility", "vol", "iv rank", "iv percentile"]):
+                return "options_volatility"
+            elif any(word in user_lower for word in ["black-scholes", "theoretical", "fair value", "calculate the"]) and "price" in user_lower:
+                return "options_pricing"
+            elif any(word in user_lower for word in ["risk", "var", "stress", "drawdown", "position size", "max loss"]):
+                return "options_risk"
+            elif any(word in user_lower for word in ["p&l", "pnl", "attribution", "decompose"]):
+                return "options_pnl"
+            else:
+                return "options_general"
+        elif any(word in user_lower for word in ["beat", "miss", "earnings", "expectations", "surprise"]):
+            return "beat_or_miss"
+        elif any(word in user_lower for word in ["10-k", "10k", "10-q", "10q", "annual report", "sec filing", "8-k"]):
+            return "sec_filing"
+        elif any(word in user_lower for word in ["ratio", "p/e", "pe ratio", "roe", "roa", "debt", "current ratio"]):
+            return "ratio_calculation"
+        elif any(word in user_lower for word in ["recommend", "buy", "sell", "hold", "rating", "target price"]):
+            return "recommendation"
+        elif any(word in user_lower for word in ["revenue", "income", "profit", "margin", "growth"]):
+            return "financial_metrics"
+        elif any(word in user_lower for word in ["event", "impact", "affect", "consequence", "result in"]):
+            return "event_logic"
+        elif any(word in user_lower for word in ["calculate", "compute", "what is the", "how much"]):
+            return "quantitative"
+
+        return "general"
+
+    async def _parse_task(self, user_input: str) -> dict[str, Any]:
         """
         Parse the user input to extract task information.
+        Uses LLM for classification with keyword fallback.
 
         Args:
             user_input: Raw user input/question
@@ -224,39 +362,17 @@ class FinanceAgentExecutor(AgentExecutor):
         # Extract ticker symbols (uppercase letters, 1-5 chars)
         tickers = re.findall(r'\b([A-Z]{1,5})\b', user_input)
         # Filter common words that might match
-        common_words = {"Q", "FY", "EPS", "PE", "ROE", "YOY", "QOQ", "CEO", "CFO", "SEC", "AI", "US", "GDP"}
+        common_words = {"Q", "FY", "EPS", "PE", "ROE", "YOY", "QOQ", "CEO", "CFO", "SEC", "AI", "US", "GDP", "ATM", "OTM", "ITM", "DTE", "IV", "HV", "BS"}
         task_info["tickers"] = [t for t in tickers if t not in common_words]
 
-        # Detect task type
-        user_lower = user_input.lower()
-
-        # Check for options trading tasks first (more specific)
-        if any(word in user_lower for word in self.OPTIONS_KEYWORDS):
-            # Determine specific options task type
-            if any(word in user_lower for word in ["iron condor", "straddle", "strangle", "spread", "butterfly", "construct", "build"]):
-                task_info["task_type"] = "options_strategy"
-            elif any(word in user_lower for word in ["delta", "gamma", "theta", "vega", "greeks", "hedge"]):
-                task_info["task_type"] = "options_greeks"
-            elif any(word in user_lower for word in ["volatility", "iv", "implied volatility", "vol"]):
-                task_info["task_type"] = "options_volatility"
-            elif any(word in user_lower for word in ["price", "premium", "black-scholes", "theoretical"]):
-                task_info["task_type"] = "options_pricing"
-            elif any(word in user_lower for word in ["risk", "var", "stress", "drawdown"]):
-                task_info["task_type"] = "options_risk"
-            elif any(word in user_lower for word in ["p&l", "pnl", "profit", "loss", "attribution"]):
-                task_info["task_type"] = "options_pnl"
-            else:
-                task_info["task_type"] = "options_general"
-        elif any(word in user_lower for word in ["beat", "miss", "earnings", "expectations"]):
-            task_info["task_type"] = "beat_or_miss"
-        elif any(word in user_lower for word in ["10-k", "10k", "annual report", "sec filing"]):
-            task_info["task_type"] = "sec_filing"
-        elif any(word in user_lower for word in ["ratio", "p/e", "pe ratio", "roe", "roa", "debt"]):
-            task_info["task_type"] = "ratio_calculation"
-        elif any(word in user_lower for word in ["recommend", "buy", "sell", "hold", "rating"]):
-            task_info["task_type"] = "recommendation"
-        elif any(word in user_lower for word in ["revenue", "income", "profit", "margin"]):
-            task_info["task_type"] = "financial_metrics"
+        # Try LLM classification first, fall back to keywords
+        llm_task_type = await self._classify_task_with_llm(user_input)
+        if llm_task_type:
+            task_info["task_type"] = llm_task_type
+            task_info["classification_method"] = "llm"
+        else:
+            task_info["task_type"] = self._classify_task_with_keywords(user_input)
+            task_info["classification_method"] = "keywords"
 
         # Extract fiscal year
         fy_match = re.search(r'FY\s*(\d{4})', user_input, re.IGNORECASE)
@@ -535,6 +651,22 @@ Your analysis should be:
 - Strategy appropriateness for market conditions
 - Risk management considerations
 - Supporting data and calculations""",
+
+            "event_logic": """Focus on:
+- Clear cause-and-effect reasoning
+- Logical chain of events and their financial impact
+- Market implications of the event
+- Historical precedents if applicable
+- Short-term and long-term consequences
+- Stakeholder impact analysis""",
+
+            "quantitative": """Focus on:
+- Precise numerical calculations
+- Show all work and intermediate steps
+- Use appropriate financial formulas
+- Verify calculations with sanity checks
+- Present results with appropriate precision
+- Include units and context for all numbers""",
         }
 
         return base_prompt + type_specific.get(task_type, "Provide comprehensive financial analysis.")
