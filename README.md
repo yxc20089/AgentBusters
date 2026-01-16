@@ -386,6 +386,10 @@ curl -X POST http://localhost:9109/ \
 #   strategy: stratified  # Options: sequential, random, stratified, weighted
 #   total_limit: 100
 #   seed: 42
+# llm_eval:
+#   enabled: true
+#   model: gpt-4o-mini
+#   temperature: 0.0
 
 
 # MCP helpers and CSV batch eval
@@ -413,20 +417,22 @@ python -m scripts.run_bizfin_eval \
 # List task types by language:
 python -c "from cio_agent.datasets import BizFinBenchProvider; print(BizFinBenchProvider.list_task_types_by_language())"
 
-# Dataset-specific evaluators (exact-match scoring, no LLM needed):
-# BizFinBench: numerical matching (±1% tolerance), sequence matching, classification
+# Dataset-specific evaluators (exact-match scoring by default, optional LLM grading):
+# BizFinBench: numerical matching (+/-1% tolerance), sequence matching, classification
 python -m scripts.run_bizfin_simple \
 	--dataset-path data/BizFinBench.v2 \
 	--task-type financial_quantitative_computation \
 	--language en \
 	--purple-endpoint http://localhost:9110 \
 	--output /tmp/bizfin_results.json --limit 5
+# Optional: --eval-llm --eval-llm-model gpt-4o-mini
 
 # public.csv: correctness/contradiction rubric evaluation
 python -m scripts.run_csv_simple \
 	--dataset-path finance-agent/data/public.csv \
 	--purple-endpoint http://localhost:9110 \
 	--output /tmp/csv_results.json --limit 5
+# Optional: --eval-llm --eval-llm-model gpt-4o-mini
 
 
 # Alternative direct startup (stdio by default)
@@ -449,7 +455,7 @@ Tip: Using hosted APIs instead of local vLLM? You can skip Terminal 1 and just c
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-your-key
 LLM_MODEL=gpt-4o
-# Do not set OPENAI_API_BASE when using OpenAI's hosted API
+# Do not set OPENAI_API_BASE or OPENAI_BASE_URL when using OpenAI's hosted API
 ```
 
 ```dotenv
@@ -464,6 +470,7 @@ Tip: For vLLM-backed LLM calls, set these in `.env` (auto-loaded):
 ```dotenv
 LLM_PROVIDER=openai
 OPENAI_API_BASE=http://localhost:8000/v1
+OPENAI_BASE_URL=http://localhost:8000/v1  # alias for OPENAI_API_BASE
 OPENAI_API_KEY=dummy
 LLM_MODEL=openai/gpt-oss-20b
 ```
@@ -607,6 +614,20 @@ MCP_YFINANCE_URL=http://localhost:8102
 MCP_SANDBOX_URL=http://localhost:8103
 ```
 
+**LLM grading for dataset evaluators (bizfinbench/public_csv):**
+```dotenv
+EVAL_USE_LLM=true
+EVAL_LLM_MODEL=gpt-4o-mini
+EVAL_LLM_TEMPERATURE=0.0
+```
+Uses `OPENAI_API_KEY` + `OPENAI_BASE_URL`/`OPENAI_API_BASE` (OpenAI-compatible) or `ANTHROPIC_API_KEY`.
+
+CLI override example:
+```bash
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 \
+  --eval-llm --eval-llm-model gpt-4o-mini --eval-llm-temperature 0.0
+```
+
 The agents will automatically load `.env` on startup. Alternatively, you can use `export` commands instead of `.env` file.
 
 ### Environment Variables Reference
@@ -617,7 +638,11 @@ The agents will automatically load `.env` on startup. Alternatively, you can use
 | `LLM_MODEL` | Model name | `gpt-4o`, `claude-3.5-sonnet`, `openai/gpt-oss-20b` |
 | `OPENAI_API_KEY` | OpenAI API key | `sk-...` |
 | `OPENAI_API_BASE` | Custom API endpoint (for local vLLM) | `http://localhost:8000/v1` |
+| `OPENAI_BASE_URL` | Alias for `OPENAI_API_BASE` | `http://localhost:8000/v1` |
 | `ANTHROPIC_API_KEY` | Anthropic API key | `sk-ant-...` |
+| `EVAL_USE_LLM` | Enable LLM grading for dataset evaluators | `true` |
+| `EVAL_LLM_MODEL` | Model override for LLM grading | `gpt-4o-mini` |
+| `EVAL_LLM_TEMPERATURE` | Temperature for LLM grading | `0.0` |
 | `MCP_EDGAR_URL` | SEC EDGAR MCP server | `http://localhost:8101` |
 | `MCP_YFINANCE_URL` | Yahoo Finance MCP server | `http://localhost:8102` |
 | `MCP_SANDBOX_URL` | Sandbox MCP server | `http://localhost:8103` |

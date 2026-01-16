@@ -37,6 +37,7 @@ from cio_agent.datasets import BizFinBenchProvider, CsvFinanceDatasetProvider
 
 # Dataset-specific evaluators
 from evaluators import BizFinBenchEvaluator, PublicCsvEvaluator, OptionsEvaluator
+from evaluators.llm_utils import build_llm_client, should_use_llm
 
 
 class EvalRequest(BaseModel):
@@ -84,6 +85,9 @@ class GreenAgent:
         task_type: Optional[str] = None,
         language: str = "en",
         limit: Optional[int] = None,
+        eval_use_llm: Optional[bool] = None,
+        eval_llm_model: Optional[str] = None,
+        eval_llm_temperature: Optional[float] = None,
     ):
         """
         Initialize the Green Agent.
@@ -99,6 +103,9 @@ class GreenAgent:
             task_type: For BizFinBench, the specific task type to evaluate
             language: Language for BizFinBench ('en' or 'cn')
             limit: Optional limit on number of examples
+            eval_use_llm: Optional override to enable/disable LLM grading
+            eval_llm_model: Optional LLM model override for grading
+            eval_llm_temperature: Optional temperature override for grading
         """
         self.messenger = Messenger()
         self.evaluator = ComprehensiveEvaluator()
@@ -132,11 +139,44 @@ class GreenAgent:
             
             self.dataset_loader = ConfigurableDatasetLoader(self.eval_config)
             self._loaded_examples = self.dataset_loader.load()
-            
+
+        config_llm = self.eval_config.llm_eval if self.eval_config else None
+        config_use_llm = config_llm.enabled if config_llm and config_llm.enabled is not None else None
+        config_llm_model = config_llm.model if config_llm and config_llm.model else None
+        config_llm_temp = (
+            config_llm.temperature if config_llm and config_llm.temperature is not None else None
+        )
+
+        if eval_use_llm is not None:
+            self.use_llm = eval_use_llm
+        elif config_use_llm is not None:
+            self.use_llm = config_use_llm
+        else:
+            self.use_llm = should_use_llm()
+
+        self.llm_model = eval_llm_model or config_llm_model
+        self.llm_temperature = (
+            eval_llm_temperature if eval_llm_temperature is not None else config_llm_temp
+        )
+        self.llm_client = build_llm_client() if self.use_llm else None
+        if self.use_llm and self.llm_client is None:
+            self.use_llm = False
+
+        if self.eval_config is not None:
             # Initialize evaluators for each dataset type present
             self._evaluators = {
-                "bizfinbench": BizFinBenchEvaluator(),
-                "public_csv": PublicCsvEvaluator(),
+                "bizfinbench": BizFinBenchEvaluator(
+                    use_llm=self.use_llm,
+                    llm_client=self.llm_client,
+                    llm_model=self.llm_model,
+                    llm_temperature=self.llm_temperature,
+                ),
+                "public_csv": PublicCsvEvaluator(
+                    use_llm=self.use_llm,
+                    llm_client=self.llm_client,
+                    llm_model=self.llm_model,
+                    llm_temperature=self.llm_temperature,
+                ),
                 "synthetic": self.evaluator,  # Use ComprehensiveEvaluator
                 "options": None,  # Options use OptionsEvaluator initialized per-task
             }
@@ -149,13 +189,23 @@ class GreenAgent:
                 language=language,
                 limit=limit,
             )
-            self.dataset_evaluator = BizFinBenchEvaluator()
+            self.dataset_evaluator = BizFinBenchEvaluator(
+                use_llm=self.use_llm,
+                llm_client=self.llm_client,
+                llm_model=self.llm_model,
+                llm_temperature=self.llm_temperature,
+            )
             self._examples = self.dataset_provider.load()
             
         elif dataset_type == "public_csv" and dataset_path:
             # Legacy single public.csv dataset
             self.dataset_provider = CsvFinanceDatasetProvider(path=dataset_path)
-            self.dataset_evaluator = PublicCsvEvaluator()
+            self.dataset_evaluator = PublicCsvEvaluator(
+                use_llm=self.use_llm,
+                llm_client=self.llm_client,
+                llm_model=self.llm_model,
+                llm_temperature=self.llm_temperature,
+            )
             examples = self.dataset_provider.load()
             self._examples = examples[:limit] if limit else examples
 
@@ -630,6 +680,7 @@ class GreenAgent:
                         predicted=response,
                         expected=example.answer,
                         task_type=self.task_type,
+                        question=example.question,
                     )
                     result = {
                         "example_id": example.example_id,
@@ -655,6 +706,7 @@ class GreenAgent:
                         predicted=response,
                         expected=example.answer,
                         rubric=rubric_list if rubric_list else None,
+                        question=example.question,
                     )
                     result = {
                         "example_id": example.example_id,
@@ -758,6 +810,7 @@ class GreenAgent:
                         predicted=response,
                         expected=example.answer,
                         task_type=example.task_type,
+                        question=example.question,
                     )
                     result = {
                         "example_id": example.example_id,
@@ -788,6 +841,7 @@ class GreenAgent:
                         predicted=response,
                         expected=example.answer,
                         rubric=rubric_list if rubric_list else None,
+                        question=example.question,
                     )
                     result = {
                         "example_id": example.example_id,
