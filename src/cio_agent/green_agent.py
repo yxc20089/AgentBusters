@@ -13,9 +13,10 @@ Supported modes:
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Optional, List, Union
-from pydantic import BaseModel, HttpUrl, ValidationError
+from pydantic import BaseModel
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, TaskState, Part, TextPart, DataPart
 from a2a.utils import get_message_text, new_agent_text_message
@@ -37,16 +38,6 @@ from cio_agent.datasets import BizFinBenchProvider, CsvFinanceDatasetProvider
 
 # Dataset-specific evaluators
 from evaluators import BizFinBenchEvaluator, PublicCsvEvaluator, OptionsEvaluator
-
-
-class EvalRequest(BaseModel):
-    """
-    Request format sent by the AgentBeats platform to green agents.
-
-    The platform sends this JSON structure when initiating an assessment.
-    """
-    participants: dict[str, HttpUrl]  # role -> agent URL
-    config: dict[str, Any]
 
 
 class GreenAgent:
@@ -160,45 +151,22 @@ class GreenAgent:
             self._examples = examples[:limit] if limit else examples
 
 
-    def validate_request(self, request: EvalRequest) -> tuple[bool, str]:
-        """Validate the assessment request."""
-        missing_roles = set(self.required_roles) - set(request.participants.keys())
-        if missing_roles:
-            return False, f"Missing roles: {missing_roles}"
-
-        missing_config_keys = set(self.required_config_keys) - set(request.config.keys())
-        if missing_config_keys:
-            return False, f"Missing config keys: {missing_config_keys}"
-
-        return True, "ok"
-
     async def run(self, message: Message, updater: TaskUpdater) -> None:
         """
         Run the FAB++ evaluation assessment.
 
         Args:
-            message: The incoming A2A message containing the EvalRequest
+            message: The incoming A2A message (plain text trigger)
             updater: TaskUpdater for reporting progress and results
         """
         input_text = get_message_text(message)
 
-        # Parse and validate the assessment request
-        try:
-            request: EvalRequest = EvalRequest.model_validate_json(input_text)
-            ok, msg = self.validate_request(request)
-            if not ok:
-                await updater.reject(new_agent_text_message(msg))
-                return
-        except ValidationError as e:
-            await updater.reject(new_agent_text_message(f"Invalid request: {e}"))
-            return
-
-        # Extract configuration
-        purple_agent_url = str(request.participants["purple_agent"])
-        ticker = request.config.get("ticker", "NVDA")
-        task_category = request.config.get("task_category", "beat_or_miss")
-        num_tasks = request.config.get("num_tasks", 1)
-        conduct_debate = request.config.get("conduct_debate", True)
+        # Get configuration from environment variables (set by docker-compose/scenario)
+        purple_agent_url = os.environ.get("PURPLE_AGENT_URL", "http://purple_agent:9009")
+        ticker = os.environ.get("EVAL_TICKER", "NVDA")
+        task_category = os.environ.get("EVAL_TASK_CATEGORY", "beat_or_miss")
+        num_tasks = int(os.environ.get("EVAL_NUM_TASKS", "10"))
+        conduct_debate = os.environ.get("EVAL_CONDUCT_DEBATE", "false").lower() == "true"
 
         # Report starting
         await updater.update_status(
@@ -213,9 +181,9 @@ class GreenAgent:
                 new_agent_text_message("Generating evaluation tasks...")
             )
             
-            # Get simulation date from config or use current date
+            # Get simulation date from environment or use current date
             from datetime import datetime
-            simulation_date_str = request.config.get("simulation_date")
+            simulation_date_str = os.environ.get("SIMULATION_DATE")
             if simulation_date_str:
                 simulation_date = datetime.fromisoformat(simulation_date_str)
             else:
@@ -276,11 +244,10 @@ class GreenAgent:
                 }
 
                 # Save AgentBeats-compliant results
-                import os
-                participant_id = request.config.get("participant_id", os.environ.get("AGENTBEATS_PURPLE_AGENT_ID", ""))
-                participant_name = request.config.get("participant_name", "purple_agent")
-                scenario_id = request.config.get("scenario_id", os.environ.get("AGENTBEATS_SCENARIO_ID", ""))
-                green_agent_id = request.config.get("green_agent_id", os.environ.get("AGENTBEATS_GREEN_AGENT_ID", ""))
+                participant_id = os.environ.get("AGENTBEATS_PURPLE_AGENT_ID", "")
+                participant_name = os.environ.get("PARTICIPANT_NAME", "purple_agent")
+                scenario_id = os.environ.get("AGENTBEATS_SCENARIO_ID", "")
+                green_agent_id = os.environ.get("AGENTBEATS_GREEN_AGENT_ID", "")
 
                 try:
                     results_path, leaderboard_path = format_and_save_results(
