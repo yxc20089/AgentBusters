@@ -32,7 +32,6 @@ dependencies = [
     "scipy>=1.11.0",
     "yfinance>=0.2.30",
     "edgartools>=2.0.0",
-    "sentence-transformers>=2.2.0",
     "asyncio>=3.4.0",
     "aiohttp>=3.9.0",
     "python-dotenv>=1.0.0",

@@ -209,7 +209,7 @@ class ComprehensiveEvaluator:
             # Phase 1: Macro Score (standard FAB tasks)
             macro_evaluator = MacroEvaluator(
                 ground_truth=task.ground_truth,
-                use_embeddings=False,  # Set True if sentence-transformers available
+                use_llm=True,  # Use LLM for semantic similarity evaluation
             )
             macro_result = macro_evaluator.score(agent_response.analysis)
 

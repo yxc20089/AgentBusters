@@ -5,6 +5,7 @@ Evaluates the agent's macro analysis against expert-authored ground truth,
 scoring on semantic similarity and theme coverage.
 """
 
+import os
 import re
 from typing import Optional
 
@@ -32,27 +33,32 @@ class MacroEvaluator:
     def __init__(
         self,
         ground_truth: GroundTruth,
-        use_embeddings: bool = False,
+        use_llm: bool = True,
     ):
         """
         Initialize the macro evaluator.
 
         Args:
             ground_truth: Ground truth containing macro thesis and key themes
-            use_embeddings: Whether to use sentence embeddings for similarity
-                           (requires sentence-transformers)
+            use_llm: Whether to use LLM for semantic similarity evaluation
+                    (requires OpenAI API key). Falls back to keyword matching if unavailable.
         """
         self.ground_truth = ground_truth
-        self.use_embeddings = use_embeddings
-        self._embedder = None
+        self.use_llm = use_llm
+        self._openai_client = None
 
-        if use_embeddings:
+        if use_llm:
             try:
-                from sentence_transformers import SentenceTransformer
-                self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
+                from openai import OpenAI
+                api_key = os.environ.get("OPENAI_API_KEY")
+                if api_key:
+                    self._openai_client = OpenAI(api_key=api_key)
+                else:
+                    logger.warning("OPENAI_API_KEY not set, using keyword matching")
+                    self.use_llm = False
             except ImportError:
-                logger.warning("sentence_transformers not available, using keyword matching")
-                self.use_embeddings = False
+                logger.warning("openai package not available, using keyword matching")
+                self.use_llm = False
 
     def _calculate_keyword_similarity(self, text1: str, text2: str) -> float:
         """
@@ -92,21 +98,52 @@ class MacroEvaluator:
 
         return len(intersection) / len(union)
 
-    def _calculate_embedding_similarity(self, text1: str, text2: str) -> float:
+    def _calculate_llm_similarity(self, text1: str, text2: str) -> float:
         """
-        Calculate similarity using sentence embeddings.
+        Calculate semantic similarity using LLM evaluation.
+
+        Uses GPT to assess how semantically similar two texts are,
+        returning a score from 0.0 to 1.0.
         """
-        if not self._embedder:
+        if not self._openai_client:
             return self._calculate_keyword_similarity(text1, text2)
 
-        import numpy as np
+        prompt = f"""You are an expert evaluator assessing the semantic similarity between two financial analyses.
 
-        embeddings = self._embedder.encode([text1, text2])
-        # Cosine similarity
-        similarity = np.dot(embeddings[0], embeddings[1]) / (
-            np.linalg.norm(embeddings[0]) * np.linalg.norm(embeddings[1])
-        )
-        return float(similarity)
+GROUND TRUTH ANALYSIS:
+{text2}
+
+AGENT'S ANALYSIS:
+{text1}
+
+Evaluate how semantically similar these two analyses are on a scale of 0 to 100:
+- 90-100: Nearly identical meaning, same key conclusions and reasoning
+- 70-89: Strong alignment, captures main ideas with minor differences
+- 50-69: Moderate alignment, some shared themes but notable gaps
+- 30-49: Weak alignment, only partial overlap in ideas
+- 0-29: Poor alignment, significantly different conclusions or missing key points
+
+Consider:
+1. Do they reach similar conclusions?
+2. Do they identify the same key factors/trends?
+3. Is the reasoning quality comparable?
+4. Are the same risks and opportunities noted?
+
+Respond with ONLY a single integer from 0 to 100, nothing else."""
+
+        try:
+            response = self._openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=10,
+            )
+            score_text = response.choices[0].message.content.strip()
+            score = int(score_text)
+            return min(max(score / 100.0, 0.0), 1.0)  # Clamp to [0, 1]
+        except Exception as e:
+            logger.warning("LLM similarity failed, falling back to keyword matching", error=str(e))
+            return self._calculate_keyword_similarity(text1, text2)
 
     def _count_themes_mentioned(
         self,
@@ -164,8 +201,8 @@ class MacroEvaluator:
             )
 
         # Calculate semantic similarity
-        if self.use_embeddings:
-            similarity_score = self._calculate_embedding_similarity(
+        if self.use_llm:
+            similarity_score = self._calculate_llm_similarity(
                 agent_macro_analysis,
                 self.ground_truth.macro_thesis
             ) * 100

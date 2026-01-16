@@ -12,6 +12,7 @@ COPY --chown=agent:agent src src
 
 # Note: BizFinBench data is fetched dynamically from HuggingFace API at runtime
 # Only small local data files needed for Options and CSV datasets
+# Note: PyTorch/sentence-transformers removed - using LLM for semantic similarity instead
 COPY --chown=agent:agent data/options data/options
 COPY --chown=agent:agent finance-agent/data/public.csv finance-agent/data/public.csv
 
