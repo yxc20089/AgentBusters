@@ -1,13 +1,11 @@
 """
-BizFinBench.v2 dataset provider.
+BizFinBench dataset provider using HuggingFace API.
 
-Provides access to the HiThink Research BizFinBench.v2 benchmark dataset,
-which contains 29,578 Q&A pairs across 9 financial task types in both
-Chinese and English.
+Dynamically fetches data from HiThink-Research/BizFinBench on HuggingFace Hub.
+No local data files required - questions are fetched on-demand and cached.
 
 Usage:
     provider = BizFinBenchProvider(
-        base_path="data/BizFinBench.v2",
         task_type="financial_quantitative_computation",
         language="en",
         limit=100
@@ -17,95 +15,106 @@ Usage:
 """
 
 import logging
-from pathlib import Path
-from typing import List, Optional, Union
+from functools import lru_cache
+from typing import Any, Dict, List, Optional
 
-from cio_agent.datasets.base_jsonl_provider import BaseJSONLProvider
-from cio_agent.models import TaskCategory, TaskDifficulty
+from cio_agent.datasets.base import DatasetExample, DatasetProvider
+from cio_agent.models import (
+    FABQuestionTemplate,
+    GroundTruth,
+    TaskCategory,
+    TaskDifficulty,
+    TaskRubric,
+)
 
 logger = logging.getLogger(__name__)
 
+# Global cache for HuggingFace datasets (avoid re-downloading)
+_dataset_cache: Dict[str, Any] = {}
 
-class BizFinBenchProvider(BaseJSONLProvider):
+
+class BizFinBenchProvider(DatasetProvider):
     """
-    Provider for HiThink BizFinBench.v2 dataset.
-    
-    Supports all 9 task types:
-        - anomaly_information_tracing
-        - conterfactual
-        - event_logic_reasoning
-        - financial_data_description
-        - financial_multi_turn_perception
-        - financial_quantitative_computation
-        - financial_report_analysis (cn only)
-        - stock_price_predict
-        - user_sentiment_analysis
+    Provider for HiThink BizFinBench dataset via HuggingFace API.
+
+    Dynamically fetches data from:
+    https://huggingface.co/datasets/HiThink-Research/BizFinBench
+
+    Supports 9 task types (HuggingFace subset names):
+        - Anomalous_Event_Attribution
+        - Financial_Numerical_Computation
+        - Financial_Time_Reasoning
+        - Financial_Data_Description
+        - Stock_Price_Prediction
+        - Financial_Named_Entity_Recognition
+        - Emotion_Recognition
+        - Financial_Tool_Usage
+        - Financial_Knowledge_QA
     """
 
     name = "bizfinbench"
 
-    # Task type to filename pattern mapping
+    # HuggingFace dataset identifier (v2 has both English and Chinese)
+    HF_DATASET_ID = "HiThink-Research/BizFinBench.v2"
+
+    # Map task names to JSONL filenames in the dataset
+    # Format: {lang}/{task_type}_{lang}.jsonl
     TASK_FILES = {
-        "anomaly_information_tracing": "anomaly_information_tracing_{lang}.jsonl",
-        "conterfactual": "conterfactual_{lang}.jsonl",
-        "event_logic_reasoning": "event_logic_reasoning_{lang}.jsonl",
-        "financial_data_description": "financial_data_description_{lang}.jsonl",
-        "financial_multi_turn_perception": "financial_multi-turn_perception_{lang}.jsonl",
-        "financial_quantitative_computation": "financial_quantitative_computation_{lang}.jsonl",
-        "financial_report_analysis": "financial_report_analysis.jsonl",  # cn only
-        "stock_price_predict": "stock_price_predict_{lang}.jsonl",
-        "user_sentiment_analysis": "user_sentiment_analysis_{lang}.jsonl",
+        "anomaly_information_tracing": "anomaly_information_tracing",
+        "event_logic_reasoning": "event_logic_reasoning",
+        "financial_data_description": "financial_data_description",
+        "financial_quantitative_computation": "financial_quantitative_computation",
+        "user_sentiment_analysis": "user_sentiment_analysis",
+        "stock_price_predict": "stock_price_predict",
+        "financial_multi_turn_perception": "financial_multi-turn_perception",
+        # Note: conterfactual_en.jsonl has JSON parsing issues, skip for now
+        # "conterfactual": "conterfactual",
     }
 
-    # Map BizFinBench tasks to existing TaskCategory
+    # Map task types to TaskCategory enum
     TASK_CATEGORY_MAP = {
-        "financial_quantitative_computation": TaskCategory.NUMERICAL_REASONING,
-        "event_logic_reasoning": TaskCategory.QUALITATIVE_RETRIEVAL,
-        "conterfactual": TaskCategory.FINANCIAL_MODELING,
-        "stock_price_predict": TaskCategory.MARKET_ANALYSIS,
-        "financial_data_description": TaskCategory.QUANTITATIVE_RETRIEVAL,
-        "user_sentiment_analysis": TaskCategory.QUALITATIVE_RETRIEVAL,
-        "financial_multi_turn_perception": TaskCategory.COMPLEX_RETRIEVAL,
         "anomaly_information_tracing": TaskCategory.COMPLEX_RETRIEVAL,
-        "financial_report_analysis": TaskCategory.QUALITATIVE_RETRIEVAL,
+        "event_logic_reasoning": TaskCategory.QUALITATIVE_RETRIEVAL,
+        "financial_data_description": TaskCategory.QUANTITATIVE_RETRIEVAL,
+        "financial_quantitative_computation": TaskCategory.NUMERICAL_REASONING,
+        "user_sentiment_analysis": TaskCategory.QUALITATIVE_RETRIEVAL,
+        "stock_price_predict": TaskCategory.MARKET_ANALYSIS,
+        "financial_multi_turn_perception": TaskCategory.COMPLEX_RETRIEVAL,
     }
 
     # Difficulty mapping based on task complexity
     TASK_DIFFICULTY_MAP = {
-        "financial_quantitative_computation": TaskDifficulty.MEDIUM,
-        "event_logic_reasoning": TaskDifficulty.MEDIUM,
-        "conterfactual": TaskDifficulty.HARD,
-        "stock_price_predict": TaskDifficulty.EXPERT,
-        "financial_data_description": TaskDifficulty.EASY,
-        "user_sentiment_analysis": TaskDifficulty.MEDIUM,
-        "financial_multi_turn_perception": TaskDifficulty.HARD,
         "anomaly_information_tracing": TaskDifficulty.HARD,
-        "financial_report_analysis": TaskDifficulty.HARD,
+        "event_logic_reasoning": TaskDifficulty.MEDIUM,
+        "financial_data_description": TaskDifficulty.EASY,
+        "financial_quantitative_computation": TaskDifficulty.MEDIUM,
+        "user_sentiment_analysis": TaskDifficulty.MEDIUM,
+        "stock_price_predict": TaskDifficulty.EXPERT,
+        "financial_multi_turn_perception": TaskDifficulty.HARD,
     }
 
     def __init__(
         self,
-        base_path: Union[str, Path],
         task_type: str,
         language: str = "en",
         limit: Optional[int] = None,
+        base_path: Optional[str] = None,  # Ignored, kept for backward compatibility
     ):
         """
-        Initialize BizFinBench provider.
-        
+        Initialize BizFinBench provider with HuggingFace API.
+
         Args:
-            base_path: Path to BizFinBench.v2 directory (e.g., "data/BizFinBench.v2")
-            task_type: One of the 9 task types (e.g., "financial_quantitative_computation")
-            language: "en" for English or "cn" for Chinese (default: "en")
+            task_type: Task type name (e.g., "event_logic_reasoning")
+            language: "en" for English or "cn" for Chinese
             limit: Optional limit on number of examples to load
-            
+            base_path: Ignored - kept for backward compatibility
+
         Raises:
-            ValueError: If task_type is unknown or language is invalid
-            FileNotFoundError: If the resolved file path doesn't exist
+            ValueError: If task_type is unknown
         """
-        self.base_path = Path(base_path)
         self.task_type = task_type
-        self.language = language
+        self.language = language if language != "zh" else "cn"
+        self.limit = limit
 
         # Validate task type
         if task_type not in self.TASK_FILES:
@@ -114,86 +123,82 @@ class BizFinBenchProvider(BaseJSONLProvider):
                 f"Valid types: {list(self.TASK_FILES.keys())}"
             )
 
-        # Validate language
-        if language not in ("en", "cn"):
-            raise ValueError(f"Invalid language: {language}. Must be 'en' or 'cn'")
+        # Build the file path: {lang}/{task_file}_{lang}.jsonl
+        task_file = self.TASK_FILES[task_type]
+        self.hf_file_path = f"{self.language}/{task_file}_{self.language}.jsonl"
 
-        # Special handling for financial_report_analysis (cn only)
-        if task_type == "financial_report_analysis" and language != "cn":
-            logger.warning(
-                f"Task '{task_type}' is only available in Chinese. "
-                f"Switching to language='cn'."
-            )
-            self.language = "cn"
-
-        # Resolve file path
-        file_pattern = self.TASK_FILES[task_type]
-        if "{lang}" in file_pattern:
-            filename = file_pattern.format(lang=self.language)
-        else:
-            filename = file_pattern
-
-        file_path = self.base_path / self.language / filename
-        
         # Update provider name to be unique per task
         self.name = f"bizfinbench_{task_type}_{self.language}"
 
-        super().__init__(file_path, limit)
-        
         logger.info(
-            f"Initialized BizFinBenchProvider: task={task_type}, "
-            f"lang={self.language}, path={file_path}"
+            f"Initialized BizFinBenchProvider (HuggingFace v2): "
+            f"task={task_type}, lang={self.language}, file={self.hf_file_path}"
         )
 
     @classmethod
     def list_task_types(cls, language: str = None) -> List[str]:
         """
         Return list of available task types.
-        
+
         Args:
-            language: If specified ('en' or 'cn'), only return tasks available for that language.
-                      If None, return all task types.
-        
+            language: Optional filter (not used, all tasks available in en/cn)
+
         Returns:
             List of task type names
         """
-        all_tasks = list(cls.TASK_FILES.keys())
-        
-        if language is None:
-            return all_tasks
-        
-        if language == "en":
-            # English doesn't have financial_report_analysis
-            return [t for t in all_tasks if t != "financial_report_analysis"]
-        elif language == "cn":
-            # Chinese has all tasks
-            return all_tasks
-        else:
-            raise ValueError(f"Invalid language: {language}. Must be 'en' or 'cn'")
-    
-    @classmethod
-    def list_task_types_by_language(cls) -> dict:
-        """
-        Return dict of available task types per language.
-        
-        Returns:
-            Dict with 'en' and 'cn' keys, each containing list of available task types
-        """
-        return {
-            "en": cls.list_task_types("en"),
-            "cn": cls.list_task_types("cn"),
-        }
+        return list(cls.TASK_FILES.keys())
 
-    def _extract_question(self, item: dict) -> str:
+    def _fetch_from_huggingface(self) -> List[Dict[str, Any]]:
         """
-        Extract question from BizFinBench JSONL item.
-        
-        BizFinBench format:
+        Fetch dataset from HuggingFace Hub with caching.
+
+        Uses file-based loading to fetch specific JSONL files from BizFinBench.v2.
+
+        Returns:
+            List of records from the dataset
+        """
+        cache_key = f"{self.HF_DATASET_ID}:{self.hf_file_path}"
+
+        if cache_key in _dataset_cache:
+            logger.debug(f"Using cached dataset: {cache_key}")
+            return _dataset_cache[cache_key]
+
+        logger.info(f"Fetching from HuggingFace: {self.HF_DATASET_ID} / {self.hf_file_path}")
+
+        try:
+            from datasets import load_dataset
+
+            # Load specific file from HuggingFace using data_files parameter
+            dataset = load_dataset(
+                self.HF_DATASET_ID,
+                data_files={"train": self.hf_file_path},
+                split="train",
+            )
+
+            data = list(dataset)
+
+            # Cache for future use
+            _dataset_cache[cache_key] = data
+            logger.info(f"Fetched {len(data)} records from HuggingFace")
+
+            return data
+
+        except Exception as e:
+            logger.error(f"Failed to fetch from HuggingFace: {e}")
+            raise RuntimeError(
+                f"Could not fetch BizFinBench data from HuggingFace. "
+                f"File: {self.hf_file_path}. Error: {e}"
+            )
+
+    def _extract_question(self, item: Dict[str, Any]) -> str:
+        """
+        Extract question from BizFinBench record.
+
+        Format:
         {
             "messages": [
                 {"role": "user", "content": [{"text": "...", "type": "text"}]}
-            ],
-            "choices": [...]
+            ]
         }
         """
         try:
@@ -211,18 +216,17 @@ class BizFinBenchProvider(BaseJSONLProvider):
                         return content
         except Exception as e:
             logger.warning(f"Failed to extract question: {e}")
-        
+
         return ""
 
-    def _extract_answer(self, item: dict) -> str:
+    def _extract_answer(self, item: Dict[str, Any]) -> str:
         """
-        Extract answer from BizFinBench JSONL item.
-        
-        BizFinBench format:
+        Extract answer from BizFinBench record.
+
+        Format:
         {
-            "messages": [...],
             "choices": [
-                {"index": 0, "message": {"role": "assistant", "content": [{"text": "...", "type": "text"}]}}
+                {"message": {"role": "assistant", "content": [{"text": "..."}]}}
             ]
         }
         """
@@ -242,17 +246,89 @@ class BizFinBenchProvider(BaseJSONLProvider):
                         return content
         except Exception as e:
             logger.warning(f"Failed to extract answer: {e}")
-        
+
         return ""
 
-    def _get_category(self, item: dict) -> TaskCategory:
-        """Get task category based on task type."""
-        return self.TASK_CATEGORY_MAP.get(
-            self.task_type, TaskCategory.QUALITATIVE_RETRIEVAL
-        )
+    def load(self) -> List[DatasetExample]:
+        """Load examples from HuggingFace API."""
+        import random
 
-    def _get_difficulty(self, item: dict) -> TaskDifficulty:
-        """Get task difficulty based on task type."""
-        return self.TASK_DIFFICULTY_MAP.get(
-            self.task_type, TaskDifficulty.MEDIUM
+        raw_data = self._fetch_from_huggingface()
+        examples: List[DatasetExample] = []
+
+        for idx, item in enumerate(raw_data):
+            try:
+                question = self._extract_question(item)
+                answer = self._extract_answer(item)
+
+                if not question:
+                    continue
+
+                example_id = f"bizfinbench_{self.task_type}_{self.language}_{idx}"
+                category = self.TASK_CATEGORY_MAP.get(
+                    self.task_type, TaskCategory.QUALITATIVE_RETRIEVAL
+                )
+                difficulty = self.TASK_DIFFICULTY_MAP.get(
+                    self.task_type, TaskDifficulty.MEDIUM
+                )
+
+                ground_truth = GroundTruth(
+                    macro_thesis=answer,
+                    key_themes=[self.task_type],
+                )
+
+                examples.append(
+                    DatasetExample(
+                        example_id=example_id,
+                        question=question,
+                        answer=answer,
+                        category=category,
+                        difficulty=difficulty,
+                        ground_truth=ground_truth,
+                        source="bizfinbench_hf_v2",
+                        metadata={
+                            "hf_file": self.hf_file_path,
+                            "task_type": self.task_type,
+                            "language": self.language,
+                        },
+                    )
+                )
+
+            except Exception as e:
+                logger.warning(f"Failed to process item {idx}: {e}")
+                continue
+
+        # Apply limit
+        if self.limit and len(examples) > self.limit:
+            random.shuffle(examples)
+            examples = examples[:self.limit]
+
+        logger.info(
+            f"Loaded {len(examples)} examples from BizFinBench.v2 "
+            f"(task={self.task_type}, lang={self.language})"
         )
+        return examples
+
+    def to_templates(self) -> List[FABQuestionTemplate]:
+        """Convert loaded examples to FAB question templates."""
+        templates: List[FABQuestionTemplate] = []
+        for ex in self.load():
+            templates.append(
+                FABQuestionTemplate(
+                    template_id=ex.example_id,
+                    category=ex.category,
+                    template=ex.question,
+                    difficulty=ex.difficulty,
+                    metric="bizfinbench",
+                    rubric=TaskRubric(criteria=[]),
+                    requires_code_execution=False,
+                )
+            )
+        return templates
+
+
+def clear_cache():
+    """Clear the dataset cache (useful for testing or memory management)."""
+    global _dataset_cache
+    _dataset_cache.clear()
+    logger.info("BizFinBench dataset cache cleared")

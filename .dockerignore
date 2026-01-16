@@ -1,6 +1,10 @@
-# Large data files - not needed in Docker images
-data/
-finance-agent/
+# BizFinBench data - fetched from HuggingFace API at runtime
+data/BizFinBench.v2/
+data/financial_lake/
+data/results.json
+
+# Keep: data/options/ (~20KB) - needed for Options dataset
+# Keep: finance-agent/data/public.csv (~49KB) - needed for CSV dataset
 
 # Git
 .git/

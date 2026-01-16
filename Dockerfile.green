@@ -10,6 +10,11 @@ COPY --chown=agent:agent pyproject.toml ./
 COPY --chown=agent:agent README.md ./
 COPY --chown=agent:agent src src
 
+# Note: BizFinBench data is fetched dynamically from HuggingFace API at runtime
+# Only small local data files needed for Options and CSV datasets
+COPY --chown=agent:agent data/options data/options
+COPY --chown=agent:agent finance-agent/data/public.csv finance-agent/data/public.csv
+
 # Install dependencies with uv
 RUN \
     --mount=type=cache,target=/home/agent/.cache/uv,uid=1000 \

@@ -18,12 +18,16 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class BizFinBenchDatasetConfig(BaseModel):
-    """Configuration for BizFinBench dataset."""
+    """Configuration for BizFinBench dataset (fetched from HuggingFace)."""
     type: Literal["bizfinbench"] = "bizfinbench"
-    path: str = "data/BizFinBench.v2"
+    # path is deprecated - data is fetched from HuggingFace dynamically
+    path: Optional[str] = Field(
+        default=None,
+        description="Deprecated: Data is now fetched from HuggingFace API"
+    )
     task_types: List[str] = Field(
-        default=["event_logic_reasoning"],
-        description="Task types to include. Use 'all' for all available."
+        default=["Financial_Time_Reasoning"],
+        description="Task types to include. Use HuggingFace subset names or legacy names."
     )
     languages: List[str] = Field(
         default=["en"],
@@ -253,22 +257,22 @@ class ConfigurableDatasetLoader:
             raise ValueError(f"Unknown dataset type: {config.type}")
 
     def _load_bizfinbench(self, config: BizFinBenchDatasetConfig) -> List[LoadedExample]:
-        """Load BizFinBench examples."""
+        """Load BizFinBench examples from HuggingFace API."""
         from cio_agent.datasets import BizFinBenchProvider
-        
+
         examples = []
-        
+
         for task_type in config.task_types:
             for language in config.languages:
                 try:
+                    # New HuggingFace-based provider (path is ignored)
                     provider = BizFinBenchProvider(
-                        base_path=config.path,
                         task_type=task_type,
                         language=language,
                         limit=config.limit_per_task,
                     )
                     raw_examples = provider.load()
-                    
+
                     for ex in raw_examples:
                         examples.append(LoadedExample(
                             example_id=ex.example_id,
@@ -279,10 +283,12 @@ class ConfigurableDatasetLoader:
                             language=language,
                             metadata={"source": f"bizfinbench_{task_type}_{language}"},
                         ))
-                except FileNotFoundError:
-                    # Skip if task type / language combination doesn't exist
+                except (ValueError, RuntimeError) as e:
+                    # Skip if task type doesn't exist or HuggingFace fetch fails
+                    import logging
+                    logging.warning(f"Failed to load BizFinBench {task_type}/{language}: {e}")
                     continue
-        
+
         return examples
 
     def _load_public_csv(self, config: PublicCsvDatasetConfig) -> List[LoadedExample]:
@@ -514,7 +520,7 @@ def create_default_config() -> EvaluationConfig:
         name="FAB++ Default Evaluation",
         datasets=[
             BizFinBenchDatasetConfig(
-                path="data/BizFinBench.v2",
+                # Data fetched from HuggingFace BizFinBench.v2 API
                 task_types=["event_logic_reasoning", "user_sentiment_analysis"],
                 languages=["en"],
                 limit_per_task=10,

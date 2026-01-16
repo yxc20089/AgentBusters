@@ -47,6 +47,8 @@ dependencies = [
     "sqlalchemy>=2.0.0",  # SQLAlchemy async support (sqlalchemy.ext.asyncio)
     # MCP Protocol Support
     "fastmcp>=2.0.0",
+    # HuggingFace datasets for dynamic benchmark retrieval
+    "datasets>=2.14.0",
 ]
 
 [project.optional-dependencies]
