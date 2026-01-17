@@ -80,6 +80,9 @@ class GreenAgent:
         eval_use_llm: Optional[bool] = None,
         eval_llm_model: Optional[str] = None,
         eval_llm_temperature: Optional[float] = None,
+        store_predicted: bool = False,
+        truncate_predicted: Optional[bool] = None,
+        predicted_max_chars: Optional[int] = None,
     ):
         """
         Initialize the Green Agent.
@@ -98,6 +101,9 @@ class GreenAgent:
             eval_use_llm: Optional override to enable/disable LLM grading
             eval_llm_model: Optional LLM model override for grading
             eval_llm_temperature: Optional temperature override for grading
+            store_predicted: Whether to store predicted outputs in results
+            truncate_predicted: Optional override to truncate predicted outputs
+            predicted_max_chars: Optional max length for predicted outputs
         """
         self.messenger = Messenger()
         self.evaluator = ComprehensiveEvaluator()
@@ -153,6 +159,17 @@ class GreenAgent:
         self.llm_client = build_llm_client() if self.use_llm else None
         if self.use_llm and self.llm_client is None:
             self.use_llm = False
+
+        self.store_predicted = store_predicted
+        if truncate_predicted is None:
+            truncate_predicted = True
+        self.truncate_predicted = truncate_predicted
+
+        if predicted_max_chars is None:
+            predicted_max_chars = 200
+        self.predicted_max_chars = predicted_max_chars
+        if self.truncate_predicted and self.predicted_max_chars <= 0:
+            self.predicted_max_chars = 200
 
         if self.eval_config is not None:
             # Initialize evaluators for each dataset type present
@@ -610,6 +627,15 @@ class GreenAgent:
             return "Hold"
         return "Unknown"
 
+    def _format_predicted(self, response: str) -> str:
+        if not self.store_predicted:
+            return ""
+        if not self.truncate_predicted or self.predicted_max_chars <= 0:
+            return response
+        if len(response) <= self.predicted_max_chars:
+            return response
+        return response[: self.predicted_max_chars] + "..."
+
     def _convert_synthetic_to_tasks(self, num_tasks: int) -> list[FABTask]:
         """
         Convert synthetic question dicts to FABTask objects.
@@ -708,6 +734,7 @@ class GreenAgent:
                     new_conversation=True,
                     timeout=300,
                 )
+                predicted_text = self._format_predicted(response)
                 
                 # Use dataset-specific evaluator
                 if self.dataset_type == "bizfinbench":
@@ -722,11 +749,15 @@ class GreenAgent:
                         "task_type": self.task_type,
                         "question": example.question[:200] + "..." if len(example.question) > 200 else example.question,
                         "expected": example.answer[:100] + "..." if len(example.answer) > 100 else example.answer,
-                        "predicted": response[:200] + "..." if len(response) > 200 else response,
+                        "predicted": predicted_text,
                         "score": eval_result.score,
                         "is_correct": eval_result.is_correct,
                         "feedback": eval_result.feedback,
                     }
+                    if eval_result.details:
+                        for key in ("llm_used", "llm_failure", "llm_raw_output"):
+                            if key in eval_result.details:
+                                result[key] = eval_result.details.get(key)
                     
                 elif self.dataset_type == "public_csv":
                     # Build rubric from example
@@ -748,13 +779,24 @@ class GreenAgent:
                         "category": example.category.value if hasattr(example.category, 'value') else str(example.category),
                         "question": example.question[:200] + "..." if len(example.question) > 200 else example.question,
                         "expected": example.answer[:100] + "..." if len(example.answer) > 100 else example.answer,
-                        "predicted": response[:200] + "..." if len(response) > 200 else response,
+                        "predicted": predicted_text,
                         "score": eval_result.score,
                         "is_correct": eval_result.score >= 0.8,  # Threshold for correctness
                         "correct_count": eval_result.correct_count,
                         "total_count": eval_result.total_count,
                         "feedback": eval_result.feedback,
                     }
+                    if eval_result.details:
+                        for key in (
+                            "llm_used",
+                            "llm_failure",
+                            "llm_raw_output",
+                            "llm_partial",
+                            "llm_item_count_expected",
+                            "llm_item_count_actual",
+                        ):
+                            if key in eval_result.details:
+                                result[key] = eval_result.details.get(key)
                 else:
                     result = {
                         "example_id": example.example_id,
@@ -826,6 +868,7 @@ class GreenAgent:
                     new_conversation=True,
                     timeout=self.eval_config.timeout_seconds if self.eval_config else 300,
                 )
+                predicted_text = self._format_predicted(response)
                 
                 # Get appropriate evaluator (options handled specially below)
                 evaluator = self._evaluators.get(example.dataset_type)
@@ -854,11 +897,15 @@ class GreenAgent:
                         "language": example.language,
                         "question": example.question[:200] + "..." if len(example.question) > 200 else example.question,
                         "expected": example.answer[:100] + "..." if len(example.answer) > 100 else example.answer,
-                        "predicted": response[:200] + "..." if len(response) > 200 else response,
+                        "predicted": predicted_text,
                         "score": eval_result.score,
                         "is_correct": eval_result.is_correct,
                         "feedback": eval_result.feedback,
                     }
+                    if eval_result.details:
+                        for key in ("llm_used", "llm_failure", "llm_raw_output"):
+                            if key in eval_result.details:
+                                result[key] = eval_result.details.get(key)
                     
                 elif example.dataset_type == "public_csv":
                     # Build rubric from metadata if available
@@ -884,13 +931,24 @@ class GreenAgent:
                         "category": example.category,
                         "question": example.question[:200] + "..." if len(example.question) > 200 else example.question,
                         "expected": example.answer[:100] + "..." if len(example.answer) > 100 else example.answer,
-                        "predicted": response[:200] + "..." if len(response) > 200 else response,
+                        "predicted": predicted_text,
                         "score": eval_result.score,
                         "is_correct": eval_result.score >= 0.8,
                         "correct_count": eval_result.correct_count,
                         "total_count": eval_result.total_count,
                         "feedback": eval_result.feedback,
                     }
+                    if eval_result.details:
+                        for key in (
+                            "llm_used",
+                            "llm_failure",
+                            "llm_raw_output",
+                            "llm_partial",
+                            "llm_item_count_expected",
+                            "llm_item_count_actual",
+                        ):
+                            if key in eval_result.details:
+                                result[key] = eval_result.details.get(key)
                     
                 elif example.dataset_type == "synthetic":
                     # Synthetic questions use recommendation extraction
@@ -906,7 +964,7 @@ class GreenAgent:
                         "question": example.question[:200] + "..." if len(example.question) > 200 else example.question,
                         "expected": expected,
                         "predicted": extracted,
-                        "predicted_full": response[:200] + "..." if len(response) > 200 else response,
+                        "predicted_full": predicted_text,
                         "score": 1.0 if is_correct else 0.0,
                         "is_correct": is_correct,
                         "feedback": f"Extracted: {extracted}, Expected: {expected}",
@@ -971,7 +1029,7 @@ class GreenAgent:
                         "category": example.category,
                         "question": example.question[:200] + "..." if len(example.question) > 200 else example.question,
                         "expected": example.answer[:100] + "..." if len(example.answer) > 100 else example.answer,
-                        "predicted": response[:200] + "..." if len(response) > 200 else response,
+                        "predicted": predicted_text,
                         "score": options_score.score,  # Keep as 0-100 scale
                         "is_correct": options_score.score >= 70,  # 70/100 threshold
                         "pnl_accuracy": options_score.pnl_accuracy,
@@ -988,7 +1046,7 @@ class GreenAgent:
                         "example_id": example.example_id,
                         "dataset_type": example.dataset_type,
                         "question": example.question[:200] + "..." if len(example.question) > 200 else example.question,
-                        "predicted": response[:200] + "..." if len(response) > 200 else response,
+                        "predicted": predicted_text,
                         "score": 0.0,  # No evaluator, no score
                         "is_correct": False,
                         "feedback": "No evaluator configured for this dataset type",

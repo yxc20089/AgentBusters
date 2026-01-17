@@ -94,8 +94,10 @@ class PublicCsvEvaluator(BaseDatasetEvaluator):
             # No rubric provided, fall back to simple comparison
             return self._simple_compare(predicted, expected or "")
 
+        llm_failure = None
+        llm_raw_output = None
         if self.use_llm:
-            llm_result = self._llm_evaluate_rubric(
+            llm_result, llm_failure, llm_raw_output = self._llm_evaluate_rubric(
                 predicted=predicted,
                 expected=expected or "",
                 rubric=rubric,
@@ -146,18 +148,26 @@ class PublicCsvEvaluator(BaseDatasetEvaluator):
         normalized_score = score / max_score if max_score > 0 else 0.0
         normalized_score = min(1.0, normalized_score)  # Cap at 1.0
         
+        details = {
+            "correctness_met": correct_count,
+            "correctness_total": total_correctness,
+            "contradictions_found": penalty_count,
+            "item_results": item_results,
+        }
+        if self.use_llm:
+            details["llm_used"] = False
+            if llm_failure:
+                details["llm_failure"] = llm_failure
+            if llm_raw_output:
+                details["llm_raw_output"] = llm_raw_output
+
         return EvalResult(
             score=normalized_score,
             max_score=1.0,
             correct_count=correct_count,
             total_count=total_correctness,
             feedback=f"Correctness: {correct_count}/{total_correctness}, Contradictions: {penalty_count}",
-            details={
-                "correctness_met": correct_count,
-                "correctness_total": total_correctness,
-                "contradictions_found": penalty_count,
-                "item_results": item_results,
-            }
+            details=details,
         )
 
     def _get_llm_client(self) -> Optional[Any]:
@@ -171,10 +181,10 @@ class PublicCsvEvaluator(BaseDatasetEvaluator):
         expected: str,
         rubric: List[Dict[str, str]],
         question: Optional[str] = None,
-    ) -> Optional[EvalResult]:
+    ) -> tuple[Optional[EvalResult], Optional[str], Optional[str]]:
         client = self._get_llm_client()
         if not client:
-            return None
+            return None, "llm_client_unavailable", None
 
         rubric_lines = []
         for idx, item in enumerate(rubric):
@@ -208,6 +218,7 @@ Return JSON only:
 {{"items":[{{"operator":"correctness","met":true}},{{"operator":"contradiction","violated":false}}]}}
 """
 
+        raw = None
         try:
             raw = call_llm(
                 client=client,
@@ -219,20 +230,32 @@ Return JSON only:
             )
             data = extract_json(raw)
             if not data or "items" not in data:
-                return None
+                logger.warning("llm_public_csv_invalid_json")
+                return None, "llm_invalid_json", raw
         except Exception as e:
             logger.warning("llm_public_csv_failed: %s", e)
-            return None
+            return None, f"llm_call_failed: {e}", raw
 
         items = data.get("items", [])
-        if len(items) != len(rubric):
-            return None
+        expected_count = len(rubric)
+        actual_count = len(items)
+        partial_mismatch = actual_count != expected_count
+        if partial_mismatch:
+            logger.warning(
+                "llm_public_csv_item_mismatch: expected=%s got=%s",
+                expected_count,
+                actual_count,
+            )
 
         correct_count = 0
         penalty_count = 0
         item_results = []
 
-        for rubric_item, eval_item in zip(rubric, items):
+        for idx, rubric_item in enumerate(rubric):
+            eval_item = items[idx] if idx < actual_count else None
+            missing = not isinstance(eval_item, dict)
+            if missing:
+                eval_item = {}
             operator = rubric_item.get("operator", "correctness")
             criteria = rubric_item.get("criteria", "")
             if operator == "correctness":
@@ -241,22 +264,28 @@ Return JSON only:
                     is_met = False
                 if is_met:
                     correct_count += 1
-                item_results.append({
+                item_result = {
                     "operator": "correctness",
                     "criteria": criteria[:100] + "..." if len(criteria) > 100 else criteria,
                     "met": is_met,
-                })
+                }
+                if missing:
+                    item_result["missing"] = True
+                item_results.append(item_result)
             elif operator == "contradiction":
                 has_contradiction = coerce_bool(eval_item.get("violated"))
                 if has_contradiction is None:
                     has_contradiction = False
                 if has_contradiction:
                     penalty_count += 1
-                item_results.append({
+                item_result = {
                     "operator": "contradiction",
                     "criteria": criteria[:100] + "..." if len(criteria) > 100 else criteria,
                     "violated": has_contradiction,
-                })
+                }
+                if missing:
+                    item_result["missing"] = True
+                item_results.append(item_result)
 
         total_correctness = sum(1 for r in rubric if r.get("operator") == "correctness")
         max_score = total_correctness if total_correctness > 0 else 1
@@ -265,6 +294,21 @@ Return JSON only:
         normalized_score = score / max_score if max_score > 0 else 0.0
         normalized_score = min(1.0, normalized_score)
 
+        details = {
+            "llm_used": True,
+            "llm_model": self.llm_model,
+            "correctness_met": correct_count,
+            "correctness_total": total_correctness,
+            "contradictions_found": penalty_count,
+            "item_results": item_results,
+        }
+        if raw is not None:
+            details["llm_raw_output"] = raw
+        if partial_mismatch:
+            details["llm_partial"] = True
+            details["llm_item_count_expected"] = expected_count
+            details["llm_item_count_actual"] = actual_count
+
         return EvalResult(
             score=normalized_score,
             max_score=1.0,
@@ -272,15 +316,8 @@ Return JSON only:
             total_count=total_correctness,
             feedback=f"LLM rubric scoring: Correctness {correct_count}/{total_correctness}, "
                      f"Contradictions {penalty_count}",
-            details={
-                "llm_used": True,
-                "llm_model": self.llm_model,
-                "correctness_met": correct_count,
-                "correctness_total": total_correctness,
-                "contradictions_found": penalty_count,
-                "item_results": item_results,
-            }
-        )
+            details=details,
+        ), None, raw
     
     def _check_correctness(self, predicted: str, criteria: str) -> bool:
         """

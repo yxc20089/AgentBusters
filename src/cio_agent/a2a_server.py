@@ -145,6 +145,27 @@ def main():
         type=float,
         help="Temperature for LLM grading (default 0.0)"
     )
+    parser.add_argument(
+        "--store-predicted",
+        action="store_true",
+        help="Store predicted outputs in evaluation results"
+    )
+    trunc_group = parser.add_mutually_exclusive_group()
+    trunc_group.add_argument(
+        "--truncate-predicted",
+        action="store_true",
+        help="Truncate predicted outputs in evaluation results"
+    )
+    trunc_group.add_argument(
+        "--no-truncate-predicted",
+        action="store_true",
+        help="Do not truncate predicted outputs in evaluation results"
+    )
+    parser.add_argument(
+        "--predicted-max-chars",
+        type=int,
+        help="Maximum characters for predicted outputs when truncation is enabled"
+    )
     args = parser.parse_args()
 
     # Validate configuration
@@ -166,6 +187,12 @@ def main():
         eval_use_llm = True
     elif args.no_eval_llm:
         eval_use_llm = False
+
+    truncate_predicted = None
+    if args.truncate_predicted:
+        truncate_predicted = True
+    elif args.no_truncate_predicted:
+        truncate_predicted = False
 
     # Load synthetic questions if provided (legacy mode)
     synthetic_questions = None
@@ -251,6 +278,9 @@ def main():
             eval_use_llm=eval_use_llm,
             eval_llm_model=args.eval_llm_model,
             eval_llm_temperature=args.eval_llm_temperature,
+            store_predicted=args.store_predicted,
+            truncate_predicted=truncate_predicted,
+            predicted_max_chars=args.predicted_max_chars,
         ),
         task_store=task_store,
     )

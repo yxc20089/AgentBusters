@@ -12,7 +12,7 @@ A dynamic finance agent benchmark system for the [AgentBeats Competition](https:
 
 This codebase is designed to work with the [AgentBeats platform](https://agentbeats.dev). The Green Agent follows the official [green-agent-template](https://github.com/RDI-Foundation/green-agent-template).
 
-### Quick Start (AgentBeats minimal: Green only)
+### Quick Start
 
 ```bash
 # Create and activate virtual environment
@@ -24,10 +24,23 @@ source .venv/bin/activate        # Linux/Mac
 pip install -e ".[dev]"
 
 # Start Green Agent (A2A server)
-python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 --eval-config .\config\eval_config.yaml --store-predicted --predicted-max-chars 200
 
-# Verify agent card
-curl http://localhost:9109/.well-known/agent.json
+# Start Purple Agent
+purple-agent serve --host 0.0.0.0 --port 9110 --card-url http://127.0.0.1:9110
+
+# Start MCP server
+python -m src.mcp_servers.sec_edgar --transport http --host 0.0.0.0 --port 8101
+python -m src.mcp_servers.yahoo_finance --transport http --host 0.0.0.0 --port 8102
+python -m src.mcp_servers.sandbox --transport http --host 0.0.0.0 --port 8103
+
+# Run the evaludation
+python scripts/run_a2a_eval.py --green-url http://127.0.0.1:9109 --purple-url http://127.0.0.1:9110 --num-tasks 25 -v -o results/eval_output.json
+# gpt 4o total score: 42.44
+
+# with debate
+python scripts/run_a2a_eval.py --green-url http://127.0.0.1:9109 --purple-url http://127.0.0.1:9110 --num-tasks 25 --conduct-debate -v -o results/eval_output_debate.json
+# gpt 4o total score: 43.65
 ```
 
 ## Prerequisites
@@ -260,6 +273,7 @@ python scripts/run_a2a_eval.py \
 # 1. SQLite Database (persistent, auto-created)
 #    File: tasks.db
 #    Contains: task status, context_id, artifacts (full evaluation results)
+#    Note: predicted/predicted_full are empty unless you start Green with --store-predicted
 
 # 2. JSON file (optional, via -o flag)
 python scripts/run_a2a_eval.py --num-tasks 10 -o results/eval_output.json
@@ -641,6 +655,15 @@ CLI override example:
 python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 \
   --eval-llm --eval-llm-model gpt-4o-mini --eval-llm-temperature 0.0
 ```
+
+**Predicted output storage (recommended for memory control):**
+```bash
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 \
+  --eval-config config/eval_config.yaml \
+  --store-predicted --predicted-max-chars 200
+```
+By default, predicted outputs are omitted from results (fields are empty).  
+Use `--store-predicted` to include them, and `--no-truncate-predicted` to keep full outputs.
 
 The agents will automatically load `.env` on startup. Alternatively, you can use `export` commands instead of `.env` file.
 

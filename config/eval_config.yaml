@@ -23,21 +23,21 @@ datasets:
     shuffle: true
     weight: 1.0
 
-  - type: synthetic
-    path: "data/synthetic_questions/questions.json"
-    limit: 10
-    shuffle: true
-    weight: 1.0
+  # - type: synthetic
+  #   path: "data/synthetic_questions/questions.json"
+  #   limit: 10
+  #   shuffle: true
+  #   weight: 1.0
 
 sampling:
   strategy: stratified
   total_limit: 30
   seed: 42
 
-# llm_eval:
-#   enabled: true
-#   model: gpt-4o-mini
-#   temperature: 0.0
+llm_eval:
+  enabled: true
+  model: gpt-4o-mini
+  temperature: 0.0
 
 debate: false
 timeout_seconds: 300

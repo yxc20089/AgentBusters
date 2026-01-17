@@ -122,10 +122,12 @@ class BizFinBenchEvaluator(BaseDatasetEvaluator):
             # Default: normalized string match
             result = self._eval_normalized_match(predicted, expected)
 
+        llm_failure = None
+        llm_raw_output = None
         if self.use_llm:
             use_llm_now = task_type not in self.STRUCTURED_TASKS or result.score < 1.0
             if use_llm_now:
-                llm_result = self._llm_evaluate(
+                llm_result, llm_failure, llm_raw_output = self._llm_evaluate(
                     predicted=predicted,
                     expected=expected,
                     task_type=task_type,
@@ -133,6 +135,15 @@ class BizFinBenchEvaluator(BaseDatasetEvaluator):
                 )
                 if llm_result is not None:
                     return llm_result
+
+        if self.use_llm:
+            if result.details is None:
+                result.details = {}
+            result.details["llm_used"] = False
+            if llm_failure:
+                result.details["llm_failure"] = llm_failure
+            if llm_raw_output:
+                result.details["llm_raw_output"] = llm_raw_output
 
         return result
 
@@ -147,10 +158,10 @@ class BizFinBenchEvaluator(BaseDatasetEvaluator):
         expected: str,
         task_type: Optional[str] = None,
         question: Optional[str] = None,
-    ) -> Optional[EvalResult]:
+    ) -> tuple[Optional[EvalResult], Optional[str], Optional[str]]:
         client = self._get_llm_client()
         if not client:
-            return None
+            return None, "llm_client_unavailable", None
 
         pred_num = self._extract_number(predicted)
         exp_num = self._extract_number(expected)
@@ -184,6 +195,7 @@ Return JSON only:
 {{"correct": true, "score": 1, "reason": "short reason"}}
 """
 
+        raw = None
         try:
             raw = call_llm(
                 client=client,
@@ -195,10 +207,10 @@ Return JSON only:
             )
             data = extract_json(raw)
             if not data:
-                return None
+                return None, "llm_invalid_json", raw
         except Exception as e:
             logger.warning("llm_bizfinbench_failed: %s", e)
-            return None
+            return None, f"llm_call_failed: {e}", raw
 
         correct = coerce_bool(data.get("correct"))
         score_val = data.get("score")
@@ -225,8 +237,9 @@ Return JSON only:
                 "llm_model": self.llm_model,
                 "llm_correct": bool(correct),
                 "llm_score_raw": score_val,
+                "llm_raw_output": raw,
             }
-        )
+        ), None, raw
     
     def _extract_number(self, text: str) -> Optional[float]:
         """Extract numerical value from text."""
