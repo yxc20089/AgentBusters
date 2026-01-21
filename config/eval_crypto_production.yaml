@@ -1,12 +1,16 @@
-# AgentBusters Crypto Trading Benchmark - PRODUCTION CONFIG
-# Uses PostgreSQL + Hidden Windows for anti-overfitting
+# AgentBusters Crypto Trading Benchmark - PRODUCTION CONFIG (secure template)
+# Keep this file public-safe. Store secrets/seeds/data in private locations only.
+# Do NOT commit: ~/.agentbusters/hidden_seeds.yaml or data/crypto/hidden.
 
 name: "AgentBusters Crypto Trading Benchmark (Production)"
 version: "1.0"
 
 datasets:
   - type: crypto
-    path: data/crypto/fallback  # Only used if PG unavailable
+    path: data/crypto/hidden  # Private fallback only (do not commit)
+    # Optional: private manifest (signed URL or private repo)
+    # remote_manifest: https://example.com/private/crypto/manifest.json
+    download_on_missing: false
 
     # PostgreSQL direct query mode
     pg_enabled: true

@@ -103,6 +103,8 @@ adversarial, meta-consistency). Use `config/eval_crypto.yaml` to run it
 and see `docs/CRYPTO_BENCHMARK.md` for data format and integration
 details.
 
+> Do not commit hidden seeds or evaluation data. Keep `~/.agentbusters/hidden_seeds.yaml` and `data/crypto/hidden/` private.
+
 ### Anti-Overfitting Design
 
 The crypto benchmark implements a **Hidden Windows** strategy to prevent overfitting:

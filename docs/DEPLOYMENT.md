@@ -71,19 +71,19 @@ Generate anonymized evaluation scenarios from PostgreSQL:
 # Using production config
 python tools/generate_hidden_windows.py \
     --config config/eval_crypto_production.yaml \
-    --output data/crypto/eval_production
+    --output data/crypto/hidden
 
 # Or with explicit parameters
 python tools/generate_hidden_windows.py \
     --hidden-seed-config crypto_benchmark_v1 \
     --window-count 12 \
     --symbols BTCUSDT,ETHUSDT \
-    --output data/crypto/eval_production
+    --output data/crypto/hidden
 ```
 
 **What gets generated:**
 ```
-data/crypto/eval_production/
+data/crypto/hidden/
 ├── manifest.json                    # List of scenarios (no timestamps)
 ├── scenario_a1b2c3d4e5f6/
 │   ├── market_data.json            # OHLCV + indicators
@@ -106,7 +106,7 @@ data/crypto/eval_production/
 ```bash
 # Create private repo and upload
 python tools/upload_eval_data.py \
-    --source data/crypto/eval_production \
+    --source data/crypto/hidden \
     --backend github \
     --repo your-org/agentbusters-eval-data
 ```
@@ -119,7 +119,7 @@ huggingface-cli login
 
 # Upload as private dataset
 python tools/upload_eval_data.py \
-    --source data/crypto/eval_production \
+    --source data/crypto/hidden \
     --backend huggingface \
     --repo your-org/agentbusters-eval-data
 ```
@@ -129,7 +129,7 @@ python tools/upload_eval_data.py \
 ```bash
 # Configure AWS credentials first
 python tools/upload_eval_data.py \
-    --source data/crypto/eval_production \
+    --source data/crypto/hidden \
     --backend s3 \
     --bucket your-bucket-name \
     --prefix eval/crypto/v1
@@ -182,11 +182,11 @@ crypto_benchmark_v1:
 # 3. Regenerate evaluation windows
 python tools/generate_hidden_windows.py \
     --config config/eval_crypto_production.yaml \
-    --output data/crypto/eval_production
+    --output data/crypto/hidden
 
 # 4. Re-upload to private storage
 python tools/upload_eval_data.py \
-    --source data/crypto/eval_production \
+    --source data/crypto/hidden \
     --backend github \
     --repo your-org/agentbusters-eval-data
 ```
@@ -203,11 +203,17 @@ python tools/upload_eval_data.py \
 
 ## Configuration Files
 
+> Do not commit hidden seeds or evaluation data. Keep `~/.agentbusters/hidden_seeds.yaml` and `data/crypto/hidden/` private.
+
 ### Production Config (`config/eval_crypto_production.yaml`)
 
 ```yaml
 datasets:
   - type: crypto
+    path: data/crypto/hidden  # Private fallback only (do not commit)
+    # remote_manifest: https://example.com/private/crypto/manifest.json
+    download_on_missing: false
+
     pg_enabled: true
     pg_host: localhost
     pg_dbname: market_data
@@ -235,7 +241,7 @@ For local development/testing with static data (not for production):
 ```yaml
 datasets:
   - type: crypto
-    path: data/crypto/eval_hidden  # Static test data
+    path: data/crypto/hidden  # Static test data (private)
     pg_enabled: false
     limit: 1
     max_steps: 20

@@ -1,23 +1,27 @@
-# AgentBusters Crypto Trading Benchmark Configuration
+# AgentBusters Crypto Trading Benchmark Configuration (safe defaults)
+# Keep evaluation data private and do NOT commit hidden seeds or scenarios.
+# Prefer anonymized scenario IDs or private manifests for production runs.
 
 name: "AgentBusters Crypto Trading Benchmark"
 version: "1.0"
 
 datasets:
-  # Example 1: JSON file-based scenarios (original mode)
+  # Example 1: JSON file-based scenarios (private/hidden data by default)
   - type: crypto
-    path: data/crypto/eval_hidden
-    # remote_manifest: https://example.com/agentbusters/crypto/manifest.json
+    path: data/crypto/hidden
+    # Optional: private manifest (signed URL or private repo)
+    # remote_manifest: https://example.com/private/crypto/manifest.json
     # cache_dir: data/crypto/cache
     # cache_ttl_hours: 24
-    # download_on_missing: true
-    pg_enabled: false
-    # scenarios filter removed - use all available scenarios in eval_hidden
-    limit: 1
+    download_on_missing: false
+    # Optional: restrict to anonymized scenario IDs
+    # scenarios:
+    #   - scenario_0123456789abcdef
+    # limit: 12
     shuffle: false
     weight: 1.0
     stride: 1
-    max_steps: 20  # Reduced for faster testing
+    max_steps: 60
     evaluation:
       initial_balance: 10000.0
       max_leverage: 3.0
@@ -25,7 +29,7 @@ datasets:
       price_noise_level: 0.001
       slippage_range: [0.0002, 0.0010]
       adversarial_injection_rate: 0.05
-      decision_interval: 5  # Only decide every 5 bars (4 decisions for 20 steps)
+      decision_interval: 1
       funding_interval_hours: 8.0
       score_weights:
         baseline: 0.40
@@ -38,12 +42,14 @@ datasets:
         max_drawdown: 0.15
         win_rate: 0.10
       meta_transforms:
-        - identity  # Only 1 meta transform for faster testing
+        - identity
+        - scale_1_1
+        - invert_returns
 
   # Example 2: PostgreSQL direct query mode with hidden windows
   # Uncomment and configure for production use
   # - type: crypto
-  #   path: data/crypto/scenarios  # fallback for non-PG mode
+  #   path: data/crypto/hidden  # fallback for exported hidden windows
   #   pg_enabled: true
   #   pg_host: localhost
   #   pg_port: 5432
@@ -93,7 +99,7 @@ datasets:
 
 sampling:
   strategy: sequential
-  total_limit: 1
+  total_limit: null
   seed: 42
 
 debate: false
