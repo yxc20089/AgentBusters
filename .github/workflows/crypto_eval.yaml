@@ -29,7 +29,7 @@ on:
 
 env:
   # Private eval data repository
-  EVAL_DATA_REPO: huixu11/agentbusters-eval-data
+  EVAL_DATA_REPO: ${{ secrets.EVAL_DATA_REPO }}
   # Or use HuggingFace
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
   HF_DATASET: ${{ secrets.HF_EVAL_DATASET }}
@@ -56,8 +56,9 @@ jobs:
       - name: Download eval data (GitHub)
         if: env.EVAL_DATA_REPO != ''
         run: |
-          gh repo clone ${{ secrets.EVAL_DATA_REPO }} eval_data_temp
-          mv eval_data_temp/crypto data/crypto/eval_hidden
+          gh repo clone "$EVAL_DATA_REPO" eval_data_temp
+          mkdir -p data/crypto
+          mv eval_data_temp/crypto/eval_hidden data/crypto/hidden
           rm -rf eval_data_temp
         env:
           GH_TOKEN: ${{ secrets.EVAL_DATA_PAT }}
@@ -72,7 +73,7 @@ jobs:
           snapshot_download(
               repo_id='${{ secrets.HF_EVAL_DATASET }}',
               repo_type='dataset',
-              local_dir='data/crypto/eval_hidden',
+              local_dir='data/crypto/hidden',
               token='${{ secrets.HF_TOKEN }}'
           )
           "
@@ -80,15 +81,15 @@ jobs:
       - name: Verify eval data
         run: |
           echo "Evaluation data:"
-          ls -la data/crypto/eval_hidden/
-          cat data/crypto/eval_hidden/manifest.json
+          ls -la data/crypto/hidden/
+          cat data/crypto/hidden/manifest.json
 
       - name: Start Green Agent
         run: |
-          python -m cio_agent serve \
+          python src/cio_agent/a2a_server.py \
             --host 0.0.0.0 \
             --port 9109 \
-            --config config/eval_crypto.yaml &
+            --eval-config config/eval_crypto.yaml &
           sleep 5
           echo "Green Agent started"
 
