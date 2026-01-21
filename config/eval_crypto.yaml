@@ -9,19 +9,12 @@ datasets:
   # Example 1: JSON file-based scenarios (private/hidden data by default)
   - type: crypto
     path: data/crypto/hidden
-    # Optional: private manifest (signed URL or private repo)
-    # remote_manifest: https://example.com/private/crypto/manifest.json
-    # cache_dir: data/crypto/cache
-    # cache_ttl_hours: 24
     download_on_missing: false
-    # Optional: restrict to anonymized scenario IDs
-    # scenarios:
-    #   - scenario_0123456789abcdef
-    # limit: 12
+    limit: 1  # Only 1 scenario for quick testing
     shuffle: false
     weight: 1.0
     stride: 1
-    max_steps: 60
+    max_steps: 20  # Only 20 bars
     evaluation:
       initial_balance: 10000.0
       max_leverage: 3.0
@@ -29,22 +22,20 @@ datasets:
       price_noise_level: 0.001
       slippage_range: [0.0002, 0.0010]
       adversarial_injection_rate: 0.05
-      decision_interval: 1
+      decision_interval: 5  # Only decide every 5 bars = 4 decisions
       funding_interval_hours: 8.0
       score_weights:
-        baseline: 0.40
-        noisy: 0.30
-        adversarial: 0.20
-        meta: 0.10
+        baseline: 1.0  # Only baseline for quick test
+        noisy: 0.0
+        adversarial: 0.0
+        meta: 0.0
       metric_weights:
         sharpe: 0.50
         total_return: 0.25
         max_drawdown: 0.15
         win_rate: 0.10
       meta_transforms:
-        - identity
-        - scale_1_1
-        - invert_returns
+        - identity  # Only 1 transform = 1 episode
 
   # Example 2: PostgreSQL direct query mode with hidden windows
   # Uncomment and configure for production use

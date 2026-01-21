@@ -30,6 +30,8 @@ on:
 env:
   # Private eval data repository
   EVAL_DATA_REPO: ${{ secrets.EVAL_DATA_REPO }}
+  # Path inside private repo (default: crypto/eval_hidden)
+  EVAL_DATA_PATH: ${{ secrets.EVAL_DATA_PATH || 'crypto/eval_hidden' }}
   # Or use HuggingFace
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
   HF_DATASET: ${{ secrets.HF_EVAL_DATASET }}
@@ -58,10 +60,20 @@ jobs:
         run: |
           gh repo clone "$EVAL_DATA_REPO" eval_data_temp
           mkdir -p data/crypto
-          mv eval_data_temp/crypto/eval_hidden data/crypto/hidden
+          # Use configurable path (default: crypto/eval_hidden)
+          if [ -d "eval_data_temp/$EVAL_DATA_PATH" ]; then
+            mv "eval_data_temp/$EVAL_DATA_PATH" data/crypto/hidden
+          elif [ -d "eval_data_temp/crypto" ]; then
+            mv eval_data_temp/crypto/* data/crypto/hidden/
+          else
+            echo "Error: Could not find eval data in private repo"
+            ls -la eval_data_temp/
+            exit 1
+          fi
           rm -rf eval_data_temp
         env:
           GH_TOKEN: ${{ secrets.EVAL_DATA_PAT }}
+          EVAL_DATA_PATH: ${{ env.EVAL_DATA_PATH }}
 
       # Option B: Download from HuggingFace private dataset
       - name: Download eval data (HuggingFace)
