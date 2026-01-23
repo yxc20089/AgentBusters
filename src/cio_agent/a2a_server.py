@@ -172,7 +172,6 @@ def main():
     eval_config = None
     if args.eval_config:
         # Config file mode (recommended)
-        from pathlib import Path
         if not Path(args.eval_config).exists():
             print(f"Error: Config file not found: {args.eval_config}")
             return 1
@@ -187,9 +186,9 @@ def main():
                 return 1
             eval_config = env_eval_config
             print(f"Using evaluation config from EVAL_CONFIG: {env_eval_config}")
-    elif args.dataset_type in ("bizfinbench", "public_csv") and not args.dataset_path:
-        print(f"Error: --dataset-path is required for {args.dataset_type}")
-        return 1
+        elif args.dataset_type in ("bizfinbench", "public_csv") and not args.dataset_path:
+            print(f"Error: --dataset-path is required for {args.dataset_type}")
+            return 1
 
     eval_use_llm = None
     if args.eval_llm:
