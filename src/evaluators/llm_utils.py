@@ -63,6 +63,7 @@ class EvaluatorLLMConfig:
         EVAL_LLM_EXECUTION_MODEL: Model for ExecutionEvaluator (default: gpt-4o-mini)
         EVAL_LLM_GDPVAL_MODEL: Model for GDPValEvaluator (default: gpt-4o)
         EVAL_LLM_BIZFINBENCH_MODEL: Model for BizFinBenchEvaluator (default: gpt-4o-mini)
+        EVAL_LLM_PUBLIC_CSV_MODEL: Model for PublicCSVEvaluator (default: gpt-4o-mini)
         EVAL_LLM_DEBATE_MODEL: Model for debate/complex reasoning (default: gpt-4o)
 
         EVAL_LLM_<NAME>_TEMPERATURE: Temperature for specific evaluator

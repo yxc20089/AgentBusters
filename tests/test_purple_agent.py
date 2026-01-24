@@ -7,6 +7,7 @@ and agent execution capabilities.
 All tests use in-process MCP servers for controlled environment.
 """
 
+import os
 import pytest
 from datetime import datetime
 from unittest.mock import MagicMock, AsyncMock, patch
@@ -145,6 +146,59 @@ print(f"CAGR: {growth_rate:.2%}")
         assert "mean" in result
         assert "std" in result
         assert "trend" in result
+
+
+class TestFinanceAgentExecutorTemperature:
+    """
+    Tests for FinanceAgentExecutor temperature handling.
+
+    Addresses Copilot review: Ensure temperature parameter with fallback to
+    PURPLE_LLM_TEMPERATURE env var and default 0.0 is correctly exercised.
+    """
+
+    def test_temperature_default_is_zero(self):
+        """Verify default temperature is 0.0 when neither param nor env var is set."""
+        # Ensure env var is not set
+        with patch.dict(os.environ, {}, clear=True):
+            # Remove PURPLE_LLM_TEMPERATURE if present
+            os.environ.pop("PURPLE_LLM_TEMPERATURE", None)
+            executor = FinanceAgentExecutor()
+            assert executor.temperature == 0.0
+
+    def test_temperature_explicit_parameter(self):
+        """Verify explicit temperature parameter takes precedence."""
+        executor = FinanceAgentExecutor(temperature=0.7)
+        assert executor.temperature == 0.7
+
+    def test_temperature_from_env_var(self):
+        """Verify PURPLE_LLM_TEMPERATURE env var is parsed and applied."""
+        with patch.dict(os.environ, {"PURPLE_LLM_TEMPERATURE": "0.5"}):
+            executor = FinanceAgentExecutor()
+            assert executor.temperature == 0.5
+
+    def test_temperature_explicit_overrides_env_var(self):
+        """Verify explicit parameter takes precedence over env var."""
+        with patch.dict(os.environ, {"PURPLE_LLM_TEMPERATURE": "0.5"}):
+            executor = FinanceAgentExecutor(temperature=0.3)
+            assert executor.temperature == 0.3
+
+    def test_temperature_invalid_env_var_fallback(self):
+        """Verify invalid env var value falls back to 0.0."""
+        with patch.dict(os.environ, {"PURPLE_LLM_TEMPERATURE": "invalid"}):
+            executor = FinanceAgentExecutor()
+            assert executor.temperature == 0.0
+
+    def test_temperature_empty_env_var_fallback(self):
+        """Verify empty env var value falls back to 0.0."""
+        with patch.dict(os.environ, {"PURPLE_LLM_TEMPERATURE": ""}):
+            executor = FinanceAgentExecutor()
+            # Empty string will cause ValueError, should fall back to 0.0
+            assert executor.temperature == 0.0
+
+    def test_temperature_zero_reproducibility(self):
+        """Verify default temperature of 0.0 for reproducible benchmarks."""
+        executor = FinanceAgentExecutor()
+        assert executor.temperature == 0.0, "Default temperature must be 0.0 for reproducibility"
 
 
 class TestFinanceAgentExecutor:

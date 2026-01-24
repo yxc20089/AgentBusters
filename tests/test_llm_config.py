@@ -4,7 +4,7 @@ Unit tests for EvaluatorLLMConfig and per-evaluator LLM settings.
 
 import os
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from evaluators.llm_utils import (
     EvaluatorLLMConfig,
@@ -337,3 +337,111 @@ class TestReproducibilityRequirements:
         """Default config must also use temperature=0."""
         config = EvaluatorLLMConfig()
         assert config.default.temperature == 0.0
+
+
+class TestExecutionEvaluatorConfig:
+    """
+    Test ExecutionEvaluator per-evaluator LLM configuration.
+
+    Addresses Copilot review: Ensure ExecutionEvaluator correctly picks up
+    model/temperature/max_tokens from EvaluatorLLMConfig.
+    """
+
+    def setup_method(self):
+        reset_evaluator_llm_config()
+
+    def teardown_method(self):
+        reset_evaluator_llm_config()
+
+    def _create_test_task(self):
+        """Create a minimal test task with all required fields."""
+        from datetime import datetime
+        from cio_agent.models import Task, TaskCategory, TaskRubric, GroundTruth
+
+        return Task(
+            question_id="test_task",
+            category=TaskCategory.NUMERICAL_REASONING,
+            question="Test question",
+            ticker="TEST",
+            fiscal_year=2024,
+            simulation_date=datetime(2024, 1, 1),
+            rubric=TaskRubric(criteria=["test"], mandatory_elements=["test"]),
+            ground_truth=GroundTruth(macro_thesis="test"),
+        )
+
+    def test_execution_evaluator_uses_default_config(self):
+        """Verify ExecutionEvaluator picks up per-evaluator config by default."""
+        from evaluators.execution import ExecutionEvaluator
+
+        task = self._create_test_task()
+        evaluator = ExecutionEvaluator(task=task)
+
+        # Should use config values from EvaluatorLLMConfig
+        assert evaluator.llm_model == get_model_for_evaluator("execution")
+        assert evaluator.llm_temperature == get_temperature_for_evaluator("execution")
+        assert evaluator.llm_max_tokens == get_max_tokens_for_evaluator("execution")
+
+    def test_execution_evaluator_explicit_model_override(self):
+        """Verify ExecutionEvaluator respects explicit model override."""
+        from evaluators.execution import ExecutionEvaluator
+
+        task = self._create_test_task()
+        evaluator = ExecutionEvaluator(
+            task=task,
+            llm_model="custom-model-override",
+        )
+
+        assert evaluator.llm_model == "custom-model-override"
+        # Temperature should still use config default
+        assert evaluator.llm_temperature == get_temperature_for_evaluator("execution")
+
+    def test_execution_evaluator_explicit_temperature_override(self):
+        """Verify ExecutionEvaluator respects explicit temperature override."""
+        from evaluators.execution import ExecutionEvaluator
+
+        task = self._create_test_task()
+
+        # Explicit temperature override (note: 0.0 for reproducibility is recommended)
+        evaluator = ExecutionEvaluator(
+            task=task,
+            llm_temperature=0.5,
+        )
+
+        assert evaluator.llm_temperature == 0.5
+        # Model should still use config default
+        assert evaluator.llm_model == get_model_for_evaluator("execution")
+
+    def test_execution_evaluator_respects_env_override(self):
+        """Verify ExecutionEvaluator respects environment variable overrides."""
+        with patch.dict(os.environ, {"EVAL_LLM_EXECUTION_MODEL": "env-override-model"}):
+            reset_evaluator_llm_config()
+
+            from evaluators.execution import ExecutionEvaluator
+
+            task = self._create_test_task()
+            evaluator = ExecutionEvaluator(task=task)
+
+            assert evaluator.llm_model == "env-override-model"
+
+    def test_execution_evaluator_uses_build_llm_client(self):
+        """Verify ExecutionEvaluator uses build_llm_client_for_evaluator when no client provided."""
+        from evaluators.execution import ExecutionEvaluator
+
+        task = self._create_test_task()
+
+        # Without API keys, llm_client will be None but the function should be called
+        evaluator = ExecutionEvaluator(task=task)
+
+        # Without API keys set, client should be None
+        if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
+            assert evaluator.llm_client is None
+
+    def test_execution_evaluator_passthrough_client(self):
+        """Verify ExecutionEvaluator uses provided client directly."""
+        from evaluators.execution import ExecutionEvaluator
+
+        task = self._create_test_task()
+        mock_client = MagicMock()
+        evaluator = ExecutionEvaluator(task=task, llm_client=mock_client)
+
+        assert evaluator.llm_client is mock_client

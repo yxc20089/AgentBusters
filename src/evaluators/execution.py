@@ -7,6 +7,7 @@ using rubric-based LLM-as-judge and code execution validation.
 Supports per-evaluator LLM configuration via EvaluatorLLMConfig.
 """
 
+import asyncio
 from typing import Any, Optional
 
 import structlog
@@ -254,8 +255,9 @@ Respond with ONLY a JSON object:
                 # Async client interface (backward compatible)
                 raw_output = await self.llm_client.generate(prompt)
             else:
-                # Use unified call_llm (sync, but works in async context)
-                raw_output = call_llm(
+                # Use unified call_llm wrapped in thread to avoid blocking event loop
+                raw_output = await asyncio.to_thread(
+                    call_llm,
                     client=self.llm_client,
                     prompt=prompt,
                     model=self.llm_model,
