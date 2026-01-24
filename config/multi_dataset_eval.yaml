@@ -9,20 +9,20 @@ datasets:
     languages:
       - en
     limit_per_task: 3
-    shuffle: true
+    shuffle: false
     weight: 1.0
 
   - type: public_csv
     path: finance-agent/data/public.csv
     limit: 3
-    shuffle: true
+    shuffle: false
     weight: 1.0
 
   - type: options
     path: data/options/questions.json
     categories: null  # All categories
     limit: 4
-    shuffle: true
+    shuffle: false
     weight: 1.0
 
 sampling:

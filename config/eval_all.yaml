@@ -18,21 +18,21 @@ datasets:
       - en
       - cn
     limit_per_task: 5
-    shuffle: true
+    shuffle: false
     weight: 1.0
 
   - type: public_csv
     path: finance-agent/data/public.csv
     categories: null
     limit: 30
-    shuffle: true
+    shuffle: false
     weight: 1.0
 
   - type: options
     path: data/options/questions.json
     categories: null
     limit: 20
-    shuffle: true
+    shuffle: false
     weight: 1.0
 
   - type: crypto
@@ -72,12 +72,12 @@ datasets:
     sectors: null
     occupations: null
     limit: 10
-    shuffle: true
+    shuffle: false
     weight: 1.0
     include_reference_files: true
 
 sampling:
-  strategy: weighted
+  strategy: stratified  # Even distribution across datasets (deterministic with shuffle: false)
   total_limit: 50
   seed: 42
 

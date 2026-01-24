@@ -49,8 +49,8 @@ class BizFinBenchDatasetConfig(BaseModel):
         description="Limit per task type (before total limit)"
     )
     shuffle: bool = Field(
-        default=True,
-        description="Shuffle examples within this dataset"
+        default=False,
+        description="Shuffle examples within this dataset (default False for reproducibility)"
     )
     weight: float = Field(
         default=1.0,
@@ -85,8 +85,8 @@ class PublicCsvDatasetConfig(BaseModel):
         description="Limit number of examples"
     )
     shuffle: bool = Field(
-        default=True,
-        description="Shuffle examples"
+        default=False,
+        description="Shuffle examples (default False for reproducibility)"
     )
     weight: float = Field(
         default=1.0,
@@ -101,7 +101,7 @@ class SyntheticDatasetConfig(BaseModel):
         description="Path to synthetic questions JSON file"
     )
     limit: Optional[int] = None
-    shuffle: bool = True
+    shuffle: bool = False  # Default False for reproducibility
     weight: float = 1.0
 
 
@@ -121,8 +121,8 @@ class OptionsDatasetConfig(BaseModel):
         description="Limit number of examples"
     )
     shuffle: bool = Field(
-        default=True,
-        description="Shuffle examples"
+        default=False,
+        description="Shuffle examples (default False for reproducibility)"
     )
     weight: float = Field(
         default=1.0,
@@ -163,8 +163,8 @@ class CryptoDatasetConfig(BaseModel):
         description="Limit number of scenarios"
     )
     shuffle: bool = Field(
-        default=True,
-        description="Shuffle scenarios"
+        default=False,
+        description="Shuffle scenarios (default False for reproducibility)"
     )
     weight: float = Field(
         default=1.0,
@@ -286,8 +286,8 @@ class GDPValDatasetConfig(BaseModel):
         description="Limit number of tasks"
     )
     shuffle: bool = Field(
-        default=True,
-        description="Shuffle tasks"
+        default=False,
+        description="Shuffle tasks (default False for reproducibility)"
     )
     weight: float = Field(
         default=1.0,
@@ -317,11 +317,11 @@ DatasetConfig = Union[
 class SamplingConfig(BaseModel):
     """Configuration for sampling strategy."""
     strategy: Literal["sequential", "random", "stratified", "weighted"] = Field(
-        default="random",
+        default="stratified",
         description=(
             "sequential: no shuffle, take in order. "
             "random: global shuffle. "
-            "stratified: equal samples per dataset/category. "
+            "stratified: equal samples per dataset/category (default). "
             "weighted: sample by dataset weights."
         )
     )
@@ -464,6 +464,11 @@ class ConfigurableDatasetLoader:
             
             self._by_dataset[dataset_config.type] = examples
             all_examples.extend(examples)
+
+        # Re-seed before sampling to ensure deterministic results
+        # (data loading may have consumed random state unpredictably)
+        if seed is not None:
+            random.seed(seed)
 
         # Apply sampling strategy
         self._examples = self._apply_sampling(all_examples)

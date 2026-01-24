@@ -26,7 +26,7 @@ class TestGDPValDatasetConfig:
         assert config.sectors is None  # All sectors
         assert config.occupations is None  # All occupations
         assert config.limit is None
-        assert config.shuffle is True
+        assert config.shuffle is False  # Default is False for reproducibility
         assert config.include_reference_files is True
 
     def test_config_with_filters(self):
