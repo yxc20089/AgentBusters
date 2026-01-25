@@ -49,8 +49,8 @@ class BizFinBenchDatasetConfig(BaseModel):
         description="Limit per task type (before total limit)"
     )
     shuffle: bool = Field(
-        default=True,
-        description="Shuffle examples within this dataset"
+        default=False,
+        description="Shuffle examples within this dataset (default False for reproducibility)"
     )
     weight: float = Field(
         default=1.0,
@@ -61,13 +61,17 @@ class BizFinBenchDatasetConfig(BaseModel):
     @classmethod
     def expand_all_task_types(cls, v):
         if v == "all" or v == ["all"]:
+            # Valid task types from HiThink-Research/BizFinBench.v2
+            # Note: financial_report_analysis is only available in Chinese (cn)
             return [
+                "anomaly_information_tracing",
                 "event_logic_reasoning",
-                "user_sentiment_analysis",
+                "financial_data_description",
                 "financial_quantitative_computation",
-                "industry_chain_knowledge",
-                "financial_terminology_quiz",
-                "conterfactual",  # Note: spelling matches dataset
+                "user_sentiment_analysis",
+                "stock_price_predict",
+                "financial_multi_turn_perception",
+                "financial_report_analysis",  # cn only
             ]
         return v
 
@@ -85,8 +89,8 @@ class PublicCsvDatasetConfig(BaseModel):
         description="Limit number of examples"
     )
     shuffle: bool = Field(
-        default=True,
-        description="Shuffle examples"
+        default=False,
+        description="Shuffle examples (default False for reproducibility)"
     )
     weight: float = Field(
         default=1.0,
@@ -101,7 +105,7 @@ class SyntheticDatasetConfig(BaseModel):
         description="Path to synthetic questions JSON file"
     )
     limit: Optional[int] = None
-    shuffle: bool = True
+    shuffle: bool = False  # Default False for reproducibility
     weight: float = 1.0
 
 
@@ -121,8 +125,8 @@ class OptionsDatasetConfig(BaseModel):
         description="Limit number of examples"
     )
     shuffle: bool = Field(
-        default=True,
-        description="Shuffle examples"
+        default=False,
+        description="Shuffle examples (default False for reproducibility)"
     )
     weight: float = Field(
         default=1.0,
@@ -163,8 +167,8 @@ class CryptoDatasetConfig(BaseModel):
         description="Limit number of scenarios"
     )
     shuffle: bool = Field(
-        default=True,
-        description="Shuffle scenarios"
+        default=False,
+        description="Shuffle scenarios (default False for reproducibility)"
     )
     weight: float = Field(
         default=1.0,
@@ -286,8 +290,8 @@ class GDPValDatasetConfig(BaseModel):
         description="Limit number of tasks"
     )
     shuffle: bool = Field(
-        default=True,
-        description="Shuffle tasks"
+        default=False,
+        description="Shuffle tasks (default False for reproducibility)"
     )
     weight: float = Field(
         default=1.0,
@@ -317,11 +321,11 @@ DatasetConfig = Union[
 class SamplingConfig(BaseModel):
     """Configuration for sampling strategy."""
     strategy: Literal["sequential", "random", "stratified", "weighted"] = Field(
-        default="random",
+        default="stratified",
         description=(
             "sequential: no shuffle, take in order. "
             "random: global shuffle. "
-            "stratified: equal samples per dataset/category. "
+            "stratified: equal samples per dataset/category (default). "
             "weighted: sample by dataset weights."
         )
     )
@@ -442,16 +446,6 @@ class ConfigurableDatasetLoader:
                 pass
         if seed is not None:
             random.seed(seed)
-        # Set random seed for reproducibility (env overrides config)
-        seed = self.config.sampling.seed
-        env_seed = os.environ.get("EVAL_SCENARIO_SEED")
-        if env_seed is not None:
-            try:
-                seed = int(env_seed)
-            except ValueError:
-                pass
-        if seed is not None:
-            random.seed(seed)
 
         all_examples = []
 
@@ -464,6 +458,11 @@ class ConfigurableDatasetLoader:
             
             self._by_dataset[dataset_config.type] = examples
             all_examples.extend(examples)
+
+        # Re-seed before sampling to ensure deterministic results
+        # (data loading may have consumed random state unpredictably)
+        if seed is not None:
+            random.seed(seed)
 
         # Apply sampling strategy
         self._examples = self._apply_sampling(all_examples)

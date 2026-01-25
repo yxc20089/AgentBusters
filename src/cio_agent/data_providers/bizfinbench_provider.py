@@ -71,6 +71,15 @@ class BizFinBenchProvider(DatasetProvider):
         # "conterfactual": "conterfactual",
     }
 
+    # Files with non-standard naming (full path specified, language-specific)
+    # Format: {task_type: {lang: "full/path.jsonl"}}
+    SPECIAL_FILES = {
+        "financial_report_analysis": {
+            "cn": "cn/financial_report_analysis.jsonl",
+            # No English version available
+        },
+    }
+
     # Map task types to TaskCategory enum
     TASK_CATEGORY_MAP = {
         "anomaly_information_tracing": TaskCategory.COMPLEX_RETRIEVAL,
@@ -80,6 +89,7 @@ class BizFinBenchProvider(DatasetProvider):
         "user_sentiment_analysis": TaskCategory.QUALITATIVE_RETRIEVAL,
         "stock_price_predict": TaskCategory.MARKET_ANALYSIS,
         "financial_multi_turn_perception": TaskCategory.COMPLEX_RETRIEVAL,
+        "financial_report_analysis": TaskCategory.COMPLEX_RETRIEVAL,
     }
 
     # Difficulty mapping based on task complexity
@@ -91,6 +101,7 @@ class BizFinBenchProvider(DatasetProvider):
         "user_sentiment_analysis": TaskDifficulty.MEDIUM,
         "stock_price_predict": TaskDifficulty.EXPERT,
         "financial_multi_turn_perception": TaskDifficulty.HARD,
+        "financial_report_analysis": TaskDifficulty.HARD,
     }
 
     def __init__(
@@ -119,16 +130,24 @@ class BizFinBenchProvider(DatasetProvider):
         if self.language not in ("en", "cn"):
             raise ValueError(f"Invalid language: {language}. Use 'en' or 'cn'.")
 
-        # Validate task type
-        if task_type not in self.TASK_FILES:
+        # Check if this is a special file with non-standard naming
+        if task_type in self.SPECIAL_FILES:
+            special_langs = self.SPECIAL_FILES[task_type]
+            if self.language not in special_langs:
+                raise ValueError(
+                    f"Task type '{task_type}' is only available in: {list(special_langs.keys())}"
+                )
+            self.hf_file_path = special_langs[self.language]
+        elif task_type in self.TASK_FILES:
+            # Standard file naming: {lang}/{task_file}_{lang}.jsonl
+            task_file = self.TASK_FILES[task_type]
+            self.hf_file_path = f"{self.language}/{task_file}_{self.language}.jsonl"
+        else:
+            all_types = list(self.TASK_FILES.keys()) + list(self.SPECIAL_FILES.keys())
             raise ValueError(
                 f"Unknown task type: {task_type}. "
-                f"Valid types: {list(self.TASK_FILES.keys())}"
+                f"Valid types: {all_types}"
             )
-
-        # Build the file path: {lang}/{task_file}_{lang}.jsonl
-        task_file = self.TASK_FILES[task_type]
-        self.hf_file_path = f"{self.language}/{task_file}_{self.language}.jsonl"
 
         # Update provider name to be unique per task
         self.name = f"bizfinbench_{task_type}_{self.language}"
@@ -144,14 +163,25 @@ class BizFinBenchProvider(DatasetProvider):
         Return list of available task types.
 
         Args:
-            language: Optional filter (en/cn). Both languages share task types.
+            language: Optional filter (en/cn). If specified, only returns
+                     task types available for that language.
 
         Returns:
             List of task type names
         """
         if language is not None and language not in ("en", "cn"):
             raise ValueError(f"Invalid language: {language}. Use 'en' or 'cn'.")
-        return list(cls.TASK_FILES.keys())
+
+        # Standard task types (available in both languages)
+        types = list(cls.TASK_FILES.keys())
+
+        # Add special task types based on language filter
+        for task_type, lang_files in cls.SPECIAL_FILES.items():
+            if language is None or language in lang_files:
+                if task_type not in types:
+                    types.append(task_type)
+
+        return types
 
     @classmethod
     def list_task_types_by_language(cls) -> Dict[str, List[str]]:

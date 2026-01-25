@@ -33,6 +33,7 @@ from evaluators.fundamental import FundamentalEvaluator
 from evaluators.execution import ExecutionEvaluator
 from evaluators.cost_tracker import CostTracker
 from evaluators.options import OptionsEvaluator, OPTIONS_CATEGORIES
+from evaluators.llm_utils import build_llm_client_for_evaluator
 
 logger = structlog.get_logger()
 
@@ -71,7 +72,9 @@ class ComprehensiveEvaluator:
             llm_client: LLM client for evaluation
         """
         self.task_generator = task_generator or DynamicTaskGenerator()
-        self.debate_manager = debate_manager or AdversarialDebateManager(llm_client=llm_client)
+        # Use debate-specific LLM config if no debate_manager or llm_client provided
+        debate_llm_client = llm_client or build_llm_client_for_evaluator("debate")
+        self.debate_manager = debate_manager or AdversarialDebateManager(llm_client=debate_llm_client)
         self.orchestrator = orchestrator or A2AOrchestrator()
         self.llm_client = llm_client
 

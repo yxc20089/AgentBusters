@@ -132,14 +132,14 @@ def print_results(result: dict, output_file: str = None):
                     if root.get("kind") == "text":
                         print(root.get("text", ""))
                     elif root.get("kind") == "data" or "data" in root:
-                        print(json.dumps(root.get("data", {}), indent=2))
+                        print(json.dumps(root.get("data", {}), indent=2, ensure_ascii=False))
     else:
-        print(json.dumps(result, indent=2))
-    
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+
     # Save to file if requested
     if output_file:
-        with open(output_file, "w") as f:
-            json.dump(result, f, indent=2)
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, ensure_ascii=False)
         print(f"\n💾 Results saved to: {output_file}")
     
     return True

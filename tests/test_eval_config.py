@@ -69,17 +69,29 @@ sampling:
         assert config.sampling.strategy == "sequential"
 
     def test_bizfinbench_all_task_types_expansion(self):
-        """Test that 'all' expands to all task types."""
+        """Test that 'all' expands to all valid BizFinBench.v2 task types."""
         from cio_agent.eval_config import BizFinBenchDatasetConfig
-        
+
         config = BizFinBenchDatasetConfig(
             path="data/BizFinBench.v2",
             task_types=["all"]
         )
-        
-        assert len(config.task_types) >= 5
-        assert "event_logic_reasoning" in config.task_types
-        assert "user_sentiment_analysis" in config.task_types
+
+        # Should expand to all 8 valid task types from HiThink-Research/BizFinBench.v2
+        # Note: financial_report_analysis is only available in Chinese (cn)
+        assert len(config.task_types) == 8
+        expected_types = [
+            "anomaly_information_tracing",
+            "event_logic_reasoning",
+            "financial_data_description",
+            "financial_quantitative_computation",
+            "user_sentiment_analysis",
+            "stock_price_predict",
+            "financial_multi_turn_perception",
+            "financial_report_analysis",
+        ]
+        for task_type in expected_types:
+            assert task_type in config.task_types
 
 
 class TestConfigurableDatasetLoader:

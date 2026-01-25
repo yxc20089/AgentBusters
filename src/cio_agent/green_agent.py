@@ -547,7 +547,7 @@ class GreenAgent:
                     "ticker": task.ticker,
                     "fiscal_year": task.fiscal_year,
                     "category": task.category.value,
-                })
+                }, ensure_ascii=False)
                 
                 try:
                     response = await self.messenger.talk_to_agent(

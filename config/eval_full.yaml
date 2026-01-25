@@ -10,7 +10,7 @@ datasets:
   - type: synthetic
     path: data/synthetic_questions/questions.json
     limit: 10
-    shuffle: true
+    shuffle: false
     weight: 0.5
 
   # BizFinBench.v2 - Multiple task types
@@ -26,7 +26,7 @@ datasets:
       - en
       - cn
     limit_per_task: 20  # 20 per task type per language
-    shuffle: true
+    shuffle: false
     weight: 1.0  # Higher weight = more samples
 
   # public.csv dataset
@@ -34,7 +34,7 @@ datasets:
     path: finance-agent/data/public.csv
     categories: null  # null = all categories
     limit: 100
-    shuffle: true
+    shuffle: false
     weight: 2.0
 
 # Sampling strategy

@@ -50,7 +50,7 @@ def merge_parts(parts: list[Part]) -> str:
         if isinstance(part.root, TextPart):
             chunks.append(part.root.text)
         elif isinstance(part.root, DataPart):
-            chunks.append(json.dumps(part.root.data, indent=2))
+            chunks.append(json.dumps(part.root.data, indent=2, ensure_ascii=False))
     return "\n".join(chunks)
 
 

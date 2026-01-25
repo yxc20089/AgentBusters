@@ -8,25 +8,25 @@ datasets:
       - financial_quantitative_computation
     languages: [en]
     limit_per_task: 5
-    shuffle: true
+    shuffle: false
     weight: 1.0
 
   - type: public_csv
     path: "finance-agent/data/public.csv"
     limit: 10
-    shuffle: true
+    shuffle: false
     weight: 1.0
 
   - type: options
     path: "data/options/questions.json"
     limit: 10
-    shuffle: true
+    shuffle: false
     weight: 1.0
 
   - type: synthetic
     path: "data/synthetic_questions/questions.json"
     limit: 10
-    shuffle: true
+    shuffle: false
     weight: 1.0
 
 sampling:

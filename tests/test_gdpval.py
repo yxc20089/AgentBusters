@@ -26,7 +26,7 @@ class TestGDPValDatasetConfig:
         assert config.sectors is None  # All sectors
         assert config.occupations is None  # All occupations
         assert config.limit is None
-        assert config.shuffle is True
+        assert config.shuffle is False  # Default is False for reproducibility
         assert config.include_reference_files is True
 
     def test_config_with_filters(self):
@@ -263,7 +263,7 @@ class TestGDPValEvaluator:
 
         assert result.score == 0.0
 
-    @patch("evaluators.gdpval_evaluator.build_llm_client")
+    @patch("evaluators.gdpval_evaluator.build_llm_client_for_evaluator")
     @patch("evaluators.gdpval_evaluator.call_llm")
     def test_llm_evaluation(self, mock_call_llm, mock_build_client):
         """Test LLM-based evaluation."""

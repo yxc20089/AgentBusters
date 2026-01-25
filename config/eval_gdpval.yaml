@@ -16,12 +16,12 @@ datasets:
     # 44 occupations available: Accountants, Audio Engineers, etc.
     occupations: null
     limit: 20  # Limit for quick testing
-    shuffle: true
+    shuffle: false
     weight: 1.0
     include_reference_files: true
 
 sampling:
-  strategy: random
+  strategy: stratified
   total_limit: 20
   seed: 42
 

@@ -158,7 +158,7 @@ def evaluate(
         report = EvaluationReporter.generate_markdown_report(task, agent_response, result)
     elif output_format == "json":
         import json
-        report = json.dumps(EvaluationReporter.generate_json_report(result), indent=2)
+        report = json.dumps(EvaluationReporter.generate_json_report(result), indent=2, ensure_ascii=False)
     else:
         report = EvaluationReporter.generate_summary(result)
 
@@ -396,7 +396,7 @@ def batch_evaluate(
             },
             "results": [EvaluationReporter.generate_json_report(r) for r in results],
         }
-        output_file.write_text(json.dumps(output_data, indent=2))
+        output_file.write_text(json.dumps(output_data, indent=2, ensure_ascii=False), encoding="utf-8")
         console.print(f"[green]Results saved to {output_file}[/green]")
 
 
@@ -593,7 +593,7 @@ def generate_synthetic(
             "questions": [q.model_dump() for q in questions],
         }
         try:
-            output_file.write_text(json.dumps(output_data, indent=2, default=str))
+            output_file.write_text(json.dumps(output_data, indent=2, default=str, ensure_ascii=False), encoding="utf-8")
             console.print(f"[green]Questions saved to {output_file}[/green]")
         except Exception as e:
             console.print(f"[red]Failed to save questions to {output_file}: {e}[/red]")
@@ -685,7 +685,7 @@ def verify_questions(
             "reports": [r.model_dump() for r in results["reports"]],
         }
         try:
-            output_file.write_text(json.dumps(report_data, indent=2, default=str))
+            output_file.write_text(json.dumps(report_data, indent=2, default=str, ensure_ascii=False), encoding="utf-8")
             console.print(f"[green]Report saved to {output_file}[/green]")
         except OSError as e:
             console.print(f"[red]Failed to save report to {output_file}: {e}[/red]")
@@ -920,7 +920,7 @@ def evaluate_synthetic(
             },
             "results": [EvaluationReporter.generate_json_report(r) for r in results],
         }
-        output_file.write_text(json.dumps(output_data, indent=2))
+        output_file.write_text(json.dumps(output_data, indent=2, ensure_ascii=False), encoding="utf-8")
         console.print(f"[green]Results saved to {output_file}[/green]")
 
 
