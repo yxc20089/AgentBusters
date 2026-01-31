@@ -15,9 +15,13 @@ Supported modes:
 
 import json
 import os
+import httpx
+import logging
 from pathlib import Path
 from typing import Any, Optional, List, Union
 from pydantic import BaseModel
+
+logger = logging.getLogger("cio_agent.green_agent")
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, TaskState, Part, TextPart, DataPart
 from a2a.utils import get_message_text, new_agent_text_message
@@ -676,6 +680,88 @@ class GreenAgent:
             return response
         return response[: self.predicted_max_chars] + "..."
 
+    async def _fetch_reference_files(self, metadata: dict) -> str:
+        """
+        Fetch and format reference files for GDPVal tasks.
+
+        Args:
+            metadata: Example metadata containing reference_file_urls or reference_file_hf_uris
+
+        Returns:
+            Formatted string with reference file contents
+        """
+        reference_files = metadata.get("reference_files", [])
+        reference_urls = metadata.get("reference_file_urls", [])
+        reference_hf_uris = metadata.get("reference_file_hf_uris", [])
+
+        if not reference_files:
+            return ""
+
+        contents = []
+        contents.append("\n\n--- REFERENCE FILES ---\n")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for i, filename in enumerate(reference_files):
+                # Try URL first, then HuggingFace URI
+                url = reference_urls[i] if i < len(reference_urls) else None
+                hf_uri = reference_hf_uris[i] if i < len(reference_hf_uris) else None
+
+                file_content = None
+
+                # Try fetching from URL
+                if url:
+                    try:
+                        response = await client.get(url)
+                        if response.status_code == 200:
+                            # Handle different file types
+                            if filename.endswith(('.txt', '.md', '.csv', '.json')):
+                                file_content = response.text
+                            elif filename.endswith(('.xlsx', '.xls')):
+                                # For Excel files, note that they're binary
+                                file_content = f"[Excel file: {filename} - {len(response.content)} bytes]"
+                            elif filename.endswith('.pdf'):
+                                file_content = f"[PDF file: {filename} - {len(response.content)} bytes]"
+                            else:
+                                file_content = response.text[:10000]  # Limit size
+                            logger.info(f"Fetched reference file: {filename} ({len(file_content)} chars)")
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch {filename} from URL: {e}")
+
+                # Try HuggingFace URI if URL failed
+                if not file_content and hf_uri:
+                    try:
+                        # Convert hf:// URI to raw URL
+                        # Format: hf://datasets/openai/gdp-val/files/xxx
+                        if hf_uri.startswith("hf://datasets/"):
+                            hf_path = hf_uri.replace("hf://datasets/", "")
+                            parts = hf_path.split("/", 2)
+                            if len(parts) >= 3:
+                                org, repo, file_path = parts[0], parts[1], parts[2]
+                                hf_url = f"https://huggingface.co/datasets/{org}/{repo}/resolve/main/{file_path}"
+                                response = await client.get(hf_url, follow_redirects=True)
+                                if response.status_code == 200:
+                                    if filename.endswith(('.txt', '.md', '.csv', '.json')):
+                                        file_content = response.text
+                                    else:
+                                        file_content = response.text[:10000]
+                                    logger.info(f"Fetched reference file from HF: {filename}")
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch {filename} from HuggingFace: {e}")
+
+                if file_content:
+                    contents.append(f"\n### File: {filename}\n")
+                    # Truncate very large files
+                    if len(file_content) > 15000:
+                        contents.append(file_content[:15000])
+                        contents.append(f"\n... [truncated, total {len(file_content)} chars]\n")
+                    else:
+                        contents.append(file_content)
+                else:
+                    contents.append(f"\n### File: {filename}\n[Content unavailable]\n")
+
+        contents.append("\n--- END REFERENCE FILES ---\n")
+        return "".join(contents)
+
     def _convert_synthetic_to_tasks(self, num_tasks: int) -> list[FABTask]:
         """
         Convert synthetic question dicts to FABTask objects.
@@ -910,9 +996,20 @@ class GreenAgent:
             try:
                 response = ""
                 if example.dataset_type != "crypto":
+                    # Build message with reference files for GDPVal
+                    message = example.question
+                    if example.dataset_type == "gdpval" and example.metadata.get("has_reference_files"):
+                        try:
+                            reference_content = await self._fetch_reference_files(example.metadata)
+                            if reference_content:
+                                message = example.question + reference_content
+                                logger.info(f"Added {len(reference_content)} chars of reference files to GDPVal task")
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch reference files for {example.example_id}: {e}")
+
                     # Send question to Purple Agent
                     response = await self.messenger.talk_to_agent(
-                        message=example.question,
+                        message=message,
                         url=purple_agent_url,
                         new_conversation=True,
                         timeout=self.eval_config.timeout_seconds if self.eval_config else 300,
