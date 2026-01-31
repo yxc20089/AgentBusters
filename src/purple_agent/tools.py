@@ -513,6 +513,66 @@ TOOLS = [
             }
         }
     },
+    # Reference File Tools
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_reference_file",
+            "description": "Fetch and parse a reference file from a URL. Supports PDF, Excel (.xlsx, .xls), Word (.docx), CSV, JSON, images, and plain text files. Use this to access reference materials provided for the task.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL of the file to fetch"
+                    },
+                    "format_hint": {
+                        "type": "string",
+                        "description": "Optional format hint if URL doesn't have extension (pdf, xlsx, docx, csv, json, txt, image)",
+                        "default": None
+                    },
+                    "extract_tables": {
+                        "type": "boolean",
+                        "description": "For PDFs/documents, whether to extract tables as structured data",
+                        "default": True
+                    },
+                    "page_start": {
+                        "type": "integer",
+                        "description": "For PDFs, starting page number (1-indexed)",
+                        "default": 1
+                    },
+                    "page_limit": {
+                        "type": "integer",
+                        "description": "For PDFs, maximum number of pages to extract (None for all)",
+                        "default": None
+                    },
+                    "row_offset": {
+                        "type": "integer",
+                        "description": "For Excel/CSV, number of rows to skip",
+                        "default": 0
+                    },
+                    "row_limit": {
+                        "type": "integer",
+                        "description": "For Excel/CSV, maximum number of rows to return (None for all)",
+                        "default": None
+                    }
+                },
+                "required": ["url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_reference_files",
+            "description": "List all available reference files for this task with their URLs and metadata (file type, size, description).",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
 ]
 
 # Tool name to function mapping (will be set by executor)

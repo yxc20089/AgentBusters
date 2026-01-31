@@ -6,9 +6,13 @@ for real financial data access with temporal locking.
 """
 
 import asyncio
+import base64
 import csv
+import json
+import mimetypes
 import os
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from dataclasses import dataclass, field
@@ -107,6 +111,10 @@ class MCPToolkit:
         # Metrics
         self._metrics = MCPToolMetrics()
         self._tool_calls: list[dict] = []
+
+        # Reference file handling
+        self._reference_files: dict[str, dict] = {}  # url -> metadata
+        self._file_cache: dict[str, bytes] = {}  # url -> raw file content
 
     async def _get_tools(self):
         """Get tools from all servers (only used in local mode)."""
@@ -1338,6 +1346,335 @@ class MCPToolkit:
             "results": formatted_results,
             "source": "FAB Finance Agent Benchmark dataset",
         }
+
+    # =========================================================================
+    # Reference File Tools
+    # =========================================================================
+
+    async def fetch_reference_file(
+        self,
+        url: str,
+        format_hint: str | None = None,
+        extract_tables: bool = True,
+        page_start: int = 1,
+        page_limit: int | None = None,
+        row_offset: int = 0,
+        row_limit: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Fetch and parse a reference file from URL.
+
+        Args:
+            url: URL of the file to fetch
+            format_hint: Optional format hint (pdf, xlsx, docx, csv, json, txt, image)
+            extract_tables: Whether to extract tables from documents
+            page_start: For PDFs, starting page number (1-indexed)
+            page_limit: For PDFs, max pages to extract
+            row_offset: For Excel/CSV, rows to skip
+            row_limit: For Excel/CSV, max rows to return
+
+        Returns:
+            Parsed file content with metadata
+        """
+        import time
+        start = time.time()
+
+        try:
+            # Check cache first
+            cache_key = url
+            if cache_key in self._file_cache:
+                raw_data = self._file_cache[cache_key]
+                content_type = ""
+            else:
+                # Fetch the file
+                response = await self._http_client.get(url, follow_redirects=True)
+                response.raise_for_status()
+                raw_data = response.content
+                content_type = response.headers.get("content-type", "")
+                self._file_cache[cache_key] = raw_data
+
+            # Determine file type
+            file_type = self._detect_file_type(url, format_hint, content_type)
+
+            # Parse based on type
+            if file_type == "pdf":
+                content = await self._parse_pdf(raw_data, extract_tables, page_start, page_limit)
+            elif file_type in ("xlsx", "xls"):
+                content = await self._parse_excel(raw_data, row_offset, row_limit)
+            elif file_type == "docx":
+                content = await self._parse_docx(raw_data)
+            elif file_type == "csv":
+                content = await self._parse_csv(raw_data, row_offset, row_limit)
+            elif file_type == "json":
+                content = await self._parse_json(raw_data)
+            elif file_type in ("png", "jpg", "jpeg", "gif", "webp", "image"):
+                content = await self._parse_image(raw_data, file_type)
+            else:
+                # Default to text
+                content = await self._parse_text(raw_data)
+
+            elapsed = int((time.time() - start) * 1000)
+            self._record_call("reference_files", "fetch_reference_file", content, elapsed)
+
+            return {
+                "url": url,
+                "file_type": file_type,
+                "size_bytes": len(raw_data),
+                "content": content,
+            }
+
+        except httpx.HTTPStatusError as e:
+            return {"error": f"HTTP error {e.response.status_code}: {str(e)}", "url": url}
+        except Exception as e:
+            return {"error": f"Failed to fetch file: {str(e)}", "url": url}
+
+    def _detect_file_type(self, url: str, format_hint: str | None, content_type: str) -> str:
+        """Detect file type from URL, hint, or content-type header."""
+        if format_hint:
+            return format_hint.lower().lstrip(".")
+
+        # Try URL extension
+        path = url.split("?")[0]
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        if ext in ("pdf", "xlsx", "xls", "docx", "csv", "json", "txt", "png", "jpg", "jpeg", "gif", "webp"):
+            return ext
+
+        # Try content-type header
+        content_type_lower = content_type.lower()
+        if "pdf" in content_type_lower:
+            return "pdf"
+        elif "spreadsheet" in content_type_lower or "excel" in content_type_lower:
+            return "xlsx"
+        elif "word" in content_type_lower or "document" in content_type_lower:
+            return "docx"
+        elif "csv" in content_type_lower:
+            return "csv"
+        elif "json" in content_type_lower:
+            return "json"
+        elif "image" in content_type_lower:
+            if "png" in content_type_lower:
+                return "png"
+            elif "jpeg" in content_type_lower or "jpg" in content_type_lower:
+                return "jpg"
+            return "image"
+
+        return "txt"
+
+    async def _parse_pdf(
+        self,
+        data: bytes,
+        extract_tables: bool,
+        page_start: int,
+        page_limit: int | None,
+    ) -> dict:
+        """Parse PDF file with pagination."""
+        try:
+            import fitz  # PyMuPDF
+
+            doc = fitz.open(stream=data, filetype="pdf")
+            total_pages = len(doc)
+            pages = []
+
+            # Convert to 0-indexed
+            start_idx = max(0, page_start - 1)
+            end_idx = total_pages if page_limit is None else min(total_pages, start_idx + page_limit)
+
+            for i in range(start_idx, end_idx):
+                page = doc[i]
+                text = page.get_text()
+                page_data = {"page": i + 1, "text": text}
+
+                if extract_tables:
+                    try:
+                        tables = page.find_tables()
+                        if tables:
+                            page_data["tables"] = [t.extract() for t in tables]
+                    except Exception:
+                        pass  # Table extraction may not be available
+
+                pages.append(page_data)
+
+            doc.close()
+
+            return {
+                "total_pages": total_pages,
+                "page_start": page_start,
+                "pages_extracted": len(pages),
+                "has_more": end_idx < total_pages,
+                "pages": pages,
+            }
+        except ImportError:
+            return {"error": "PDF parsing requires PyMuPDF (fitz). Install with: pip install pymupdf"}
+        except Exception as e:
+            return {"error": f"PDF parsing failed: {str(e)}"}
+
+    async def _parse_excel(
+        self,
+        data: bytes,
+        row_offset: int,
+        row_limit: int | None,
+    ) -> dict:
+        """Parse Excel file with pagination."""
+        try:
+            import pandas as pd
+
+            excel_file = pd.ExcelFile(BytesIO(data))
+            sheets = {}
+
+            for sheet_name in excel_file.sheet_names:
+                df = pd.read_excel(excel_file, sheet_name=sheet_name)
+                total_rows = len(df)
+
+                # Apply pagination
+                if row_offset > 0:
+                    df = df.iloc[row_offset:]
+                if row_limit is not None:
+                    df = df.head(row_limit)
+
+                sheets[sheet_name] = {
+                    "columns": list(df.columns),
+                    "total_rows": total_rows,
+                    "row_offset": row_offset,
+                    "rows_returned": len(df),
+                    "has_more": row_offset + len(df) < total_rows,
+                    "data": df.to_dict(orient="records"),
+                }
+
+            return {"sheets": sheets, "sheet_names": list(excel_file.sheet_names)}
+        except ImportError:
+            return {"error": "Excel parsing requires pandas and openpyxl. Install with: pip install pandas openpyxl"}
+        except Exception as e:
+            return {"error": f"Excel parsing failed: {str(e)}"}
+
+    async def _parse_docx(self, data: bytes) -> dict:
+        """Parse Word document."""
+        try:
+            from docx import Document
+
+            doc = Document(BytesIO(data))
+            paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+
+            tables = []
+            for table in doc.tables:
+                table_data = []
+                for row in table.rows:
+                    table_data.append([cell.text for cell in row.cells])
+                tables.append(table_data)
+
+            return {
+                "paragraphs": paragraphs,
+                "tables": tables,
+                "paragraph_count": len(paragraphs),
+                "table_count": len(tables),
+                "full_text": "\n".join(paragraphs),
+            }
+        except ImportError:
+            return {"error": "Word parsing requires python-docx. Install with: pip install python-docx"}
+        except Exception as e:
+            return {"error": f"Word parsing failed: {str(e)}"}
+
+    async def _parse_csv(
+        self,
+        data: bytes,
+        row_offset: int,
+        row_limit: int | None,
+    ) -> dict:
+        """Parse CSV file with pagination."""
+        try:
+            import pandas as pd
+
+            # Try to detect encoding
+            try:
+                text = data.decode("utf-8")
+            except UnicodeDecodeError:
+                text = data.decode("latin-1")
+
+            df = pd.read_csv(BytesIO(text.encode("utf-8")))
+            total_rows = len(df)
+
+            # Apply pagination
+            if row_offset > 0:
+                df = df.iloc[row_offset:]
+            if row_limit is not None:
+                df = df.head(row_limit)
+
+            return {
+                "columns": list(df.columns),
+                "total_rows": total_rows,
+                "row_offset": row_offset,
+                "rows_returned": len(df),
+                "has_more": row_offset + len(df) < total_rows,
+                "data": df.to_dict(orient="records"),
+            }
+        except ImportError:
+            return {"error": "CSV parsing requires pandas. Install with: pip install pandas"}
+        except Exception as e:
+            return {"error": f"CSV parsing failed: {str(e)}"}
+
+    async def _parse_json(self, data: bytes) -> dict:
+        """Parse JSON file."""
+        try:
+            text = data.decode("utf-8")
+            return {"data": json.loads(text)}
+        except json.JSONDecodeError as e:
+            return {"error": f"JSON parsing failed: {str(e)}"}
+        except Exception as e:
+            return {"error": f"JSON parsing failed: {str(e)}"}
+
+    async def _parse_image(self, data: bytes, file_type: str) -> dict:
+        """Parse image - return base64 for LLM vision."""
+        # Determine MIME type
+        mime_map = {
+            "png": "image/png",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "gif": "image/gif",
+            "webp": "image/webp",
+            "image": "image/png",  # default
+        }
+        mime_type = mime_map.get(file_type, "image/png")
+
+        return {
+            "type": "image",
+            "format": file_type,
+            "mime_type": mime_type,
+            "base64": base64.b64encode(data).decode("utf-8"),
+            "size_bytes": len(data),
+        }
+
+    async def _parse_text(self, data: bytes) -> dict:
+        """Parse plain text file."""
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            text = data.decode("latin-1")
+        return {
+            "text": text,
+            "length": len(text),
+        }
+
+    def set_reference_files(self, files: list[dict]):
+        """
+        Set available reference files for this task.
+
+        Called by the orchestration layer to provide file metadata.
+
+        Args:
+            files: List of file metadata dicts with at minimum 'url' key.
+                   Optional keys: 'name', 'description', 'type', 'size'
+        """
+        self._reference_files = {f["url"]: f for f in files}
+
+    async def list_reference_files(self) -> dict[str, Any]:
+        """List available reference files for the current task."""
+        return {
+            "files": list(self._reference_files.values()),
+            "count": len(self._reference_files),
+        }
+
+    def clear_file_cache(self):
+        """Clear the file cache."""
+        self._file_cache.clear()
 
     # =========================================================================
     # Composite Methods

@@ -719,15 +719,18 @@ class GreenAgent:
             logger.warning(f"Failed to extract PDF content from {filename}: {e}")
             return f"[PDF file: {filename} - {len(content)} bytes, extraction failed: {e}]"
 
-    async def _fetch_reference_files(self, metadata: dict) -> str:
+    def _format_reference_files_for_agent(self, metadata: dict) -> str:
         """
-        Fetch and format reference files for GDPVal tasks.
+        Format reference files as URLs for Purple Agent to fetch on demand.
+
+        Instead of fetching and embedding file contents, this provides the file
+        URLs so Purple Agent can use fetch_reference_file tool to retrieve them.
 
         Args:
             metadata: Example metadata containing reference_file_urls or reference_file_hf_uris
 
         Returns:
-            Formatted string with reference file contents
+            Formatted string with reference file URLs and instructions
         """
         reference_files = metadata.get("reference_files", [])
         reference_urls = metadata.get("reference_file_urls", [])
@@ -735,57 +738,40 @@ class GreenAgent:
         if not reference_files:
             return ""
 
-        contents = []
-        contents.append("\n\n--- REFERENCE FILES ---\n")
+        lines = []
+        lines.append("\n\n--- REFERENCE FILES AVAILABLE ---")
+        lines.append("The following reference files are available for this task.")
+        lines.append("Use the fetch_reference_file tool to download and read any files you need.\n")
 
-        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-            for i, filename in enumerate(reference_files):
-                url = reference_urls[i] if i < len(reference_urls) else None
-                if not url:
-                    contents.append(f"\n### File: {filename}\n[No URL provided]\n")
-                    continue
+        for i, filename in enumerate(reference_files):
+            url = reference_urls[i] if i < len(reference_urls) else None
+            # Detect file type from extension
+            ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "unknown"
+            file_type_map = {
+                "pdf": "PDF document",
+                "xlsx": "Excel spreadsheet",
+                "xls": "Excel spreadsheet",
+                "csv": "CSV data file",
+                "json": "JSON data file",
+                "txt": "Text file",
+                "md": "Markdown file",
+                "docx": "Word document",
+                "png": "Image (PNG)",
+                "jpg": "Image (JPEG)",
+                "jpeg": "Image (JPEG)",
+            }
+            file_type = file_type_map.get(ext, f"{ext.upper()} file")
 
-                file_content = None
-                try:
-                    response = await client.get(url)
-                    if response.status_code == 200:
-                        raw_content = response.content
+            if url:
+                lines.append(f"- {filename} ({file_type})")
+                lines.append(f"  URL: {url}")
+            else:
+                lines.append(f"- {filename} ({file_type}) [URL not available]")
 
-                        # Handle different file types
-                        if filename.endswith(('.txt', '.md', '.csv')):
-                            file_content = response.text
-                        elif filename.endswith('.json'):
-                            import json
-                            try:
-                                data = json.loads(response.text)
-                                file_content = json.dumps(data, indent=2)
-                            except:
-                                file_content = response.text
-                        elif filename.endswith(('.xlsx', '.xls')):
-                            file_content = self._extract_excel_content(raw_content, filename)
-                        elif filename.endswith('.pdf'):
-                            file_content = self._extract_pdf_content(raw_content, filename)
-                        else:
-                            # Try as text
-                            try:
-                                file_content = response.text[:10000]
-                            except:
-                                file_content = f"[Binary file: {filename} - {len(raw_content)} bytes]"
+        lines.append("\n--- END REFERENCE FILES ---\n")
 
-                        logger.info(f"Fetched reference file: {filename} ({len(file_content) if file_content else 0} chars)")
-                    else:
-                        logger.warning(f"Failed to fetch {filename}: HTTP {response.status_code}")
-                except Exception as e:
-                    logger.warning(f"Failed to fetch {filename}: {e}")
-
-                if file_content:
-                    contents.append(f"\n### File: {filename}\n")
-                    contents.append(file_content)
-                else:
-                    contents.append(f"\n### File: {filename}\n[Content unavailable]\n")
-
-        contents.append("\n--- END REFERENCE FILES ---\n")
-        return "".join(contents)
+        logger.info(f"Formatted {len(reference_files)} reference file URLs for Purple Agent")
+        return "\n".join(lines)
 
     def _convert_synthetic_to_tasks(self, num_tasks: int) -> list[FABTask]:
         """
@@ -1021,16 +1007,17 @@ class GreenAgent:
             try:
                 response = ""
                 if example.dataset_type != "crypto":
-                    # Build message with reference files for GDPVal
+                    # Build message with reference file URLs for GDPVal
+                    # Purple Agent will use fetch_reference_file tool to download files as needed
                     message = example.question
                     if example.dataset_type == "gdpval" and example.metadata.get("has_reference_files"):
                         try:
-                            reference_content = await self._fetch_reference_files(example.metadata)
-                            if reference_content:
-                                message = example.question + reference_content
-                                logger.info(f"Added {len(reference_content)} chars of reference files to GDPVal task")
+                            reference_info = self._format_reference_files_for_agent(example.metadata)
+                            if reference_info:
+                                message = example.question + reference_info
+                                logger.info(f"Added reference file URLs to GDPVal task (Purple Agent will fetch on demand)")
                         except Exception as e:
-                            logger.warning(f"Failed to fetch reference files for {example.example_id}: {e}")
+                            logger.warning(f"Failed to format reference files for {example.example_id}: {e}")
 
                     # Send question to Purple Agent
                     response = await self.messenger.talk_to_agent(

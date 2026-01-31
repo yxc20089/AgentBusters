@@ -265,14 +265,21 @@ class FinanceAgentExecutor(AgentExecutor):
 Your task is to answer the user's question accurately using the available tools.
 
 IMPORTANT GUIDELINES:
-1. FIRST try search_fab_benchmark for questions about specific financial metrics, ARPU, revenue guidance, margin trends, or benchmark data - this contains curated, accurate financial data
-2. Use web_search or search_financial_news for recent news, earnings announcements, or data not in the benchmark
-3. Use get_quote, get_financials for current stock data
-4. Use get_filing, get_xbrl_financials for SEC filing data (10-K, 10-Q)
-5. Use calculate_financial_metric or execute_python for calculations
-6. For options analysis, use the options tools
-7. Always cite specific numbers and sources in your answer
-8. If you cannot find the data, say so clearly
+1. If REFERENCE FILES are mentioned in the task, use fetch_reference_file to download and read them - these contain critical information for the task
+2. Try search_fab_benchmark for questions about specific financial metrics, ARPU, revenue guidance, margin trends, or benchmark data - this contains curated, accurate financial data
+3. Use web_search or search_financial_news for recent news, earnings announcements, or data not in the benchmark
+4. Use get_quote, get_financials for current stock data
+5. Use get_filing, get_xbrl_financials for SEC filing data (10-K, 10-Q)
+6. Use calculate_financial_metric or execute_python for calculations
+7. For options analysis, use the options tools
+8. Always cite specific numbers and sources in your answer
+9. If you cannot find the data, say so clearly
+
+REFERENCE FILE HANDLING:
+- When you see "REFERENCE FILES AVAILABLE" in the task, these files contain important data
+- Use fetch_reference_file with the URL to download and parse each file you need
+- Supported formats: PDF, Excel, Word, CSV, JSON, images, text files
+- For large files, use pagination parameters (page_start, page_limit for PDFs; row_offset, row_limit for Excel/CSV)
 
 Provide a comprehensive answer with specific data points."""
 
@@ -555,6 +562,19 @@ Provide a comprehensive answer with specific data points."""
                     query=args.get("query", ""),
                     company=args.get("company", "")
                 )
+            # Reference file tools
+            elif tool_name == "fetch_reference_file":
+                return await self.toolkit.fetch_reference_file(
+                    url=args.get("url", ""),
+                    format_hint=args.get("format_hint"),
+                    extract_tables=args.get("extract_tables", True),
+                    page_start=args.get("page_start", 1),
+                    page_limit=args.get("page_limit"),
+                    row_offset=args.get("row_offset", 0),
+                    row_limit=args.get("row_limit"),
+                )
+            elif tool_name == "list_reference_files":
+                return await self.toolkit.list_reference_files()
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
 
