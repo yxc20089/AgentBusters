@@ -45,7 +45,29 @@ llm_eval:
   temperature: 0.0
 
 # ============================================
-# ROBUSTNESS TESTING CONFIGURATION (NEW!)
+# JUDGE CONFIGURATION
+# ============================================
+# Switch between direct evaluators (default) and Judge MCP server
+judge:
+  # Mode: "direct" (built-in evaluators) or "mcp" (Judge MCP server)
+  mode: direct
+
+  # MCP server URL (required if mode: mcp)
+  # Can also be set via MCP_JUDGE_URL environment variable
+  # mcp_url: http://localhost:8107
+
+  # Semantic similarity threshold (0.0-1.0)
+  semantic_threshold: 0.5
+
+  # Numeric comparison tolerance (e.g., 0.01 = 1% tolerance)
+  numeric_tolerance: 0.01
+
+  # Enable additional checks (requires mcp mode)
+  enable_contradiction_check: false
+  enable_hallucination_check: false
+
+# ============================================
+# ROBUSTNESS TESTING CONFIGURATION
 # ============================================
 robustness:
   # Enable robustness testing (adds ~10% weight to final score)

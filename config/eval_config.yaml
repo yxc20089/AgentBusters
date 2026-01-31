@@ -76,5 +76,11 @@ llm_eval:
   model: gpt-4o-mini
   temperature: 0.0
 
+# Judge mode: "direct" (default) or "mcp" (Judge MCP server)
+# Use "mcp" mode for semantic/numeric/contradiction evaluation via Judge MCP
+judge:
+  mode: direct  # Change to "mcp" to use Judge MCP server
+  # mcp_url: http://localhost:8107  # Required if mode: mcp
+
 debate: false
 timeout_seconds: 300
