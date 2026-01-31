@@ -680,6 +680,45 @@ class GreenAgent:
             return response
         return response[: self.predicted_max_chars] + "..."
 
+    def _extract_excel_content(self, content: bytes, filename: str) -> str:
+        """Extract content from Excel file as formatted text."""
+        import io
+        try:
+            import pandas as pd
+            xlsx = pd.ExcelFile(io.BytesIO(content))
+            parts = [f"Excel file with {len(xlsx.sheet_names)} sheet(s): {xlsx.sheet_names}\n"]
+
+            for sheet_name in xlsx.sheet_names:
+                df = pd.read_excel(xlsx, sheet_name=sheet_name)
+                parts.append(f"\n--- Sheet: {sheet_name} ({df.shape[0]} rows × {df.shape[1]} cols) ---\n")
+                parts.append(df.to_csv(index=False))
+
+            return "".join(parts)
+        except Exception as e:
+            logger.warning(f"Failed to extract Excel content from {filename}: {e}")
+            return f"[Excel file: {filename} - {len(content)} bytes, extraction failed: {e}]"
+
+    def _extract_pdf_content(self, content: bytes, filename: str) -> str:
+        """Extract text content from PDF file."""
+        try:
+            import pypdf
+            import io
+            reader = pypdf.PdfReader(io.BytesIO(content))
+            parts = [f"PDF file with {len(reader.pages)} page(s)\n"]
+
+            for i, page in enumerate(reader.pages):
+                text = page.extract_text()
+                if text:
+                    parts.append(f"\n--- Page {i+1} ---\n")
+                    parts.append(text)
+
+            return "".join(parts)
+        except ImportError:
+            return f"[PDF file: {filename} - {len(content)} bytes, pypdf not installed]"
+        except Exception as e:
+            logger.warning(f"Failed to extract PDF content from {filename}: {e}")
+            return f"[PDF file: {filename} - {len(content)} bytes, extraction failed: {e}]"
+
     async def _fetch_reference_files(self, metadata: dict) -> str:
         """
         Fetch and format reference files for GDPVal tasks.
@@ -692,7 +731,6 @@ class GreenAgent:
         """
         reference_files = metadata.get("reference_files", [])
         reference_urls = metadata.get("reference_file_urls", [])
-        reference_hf_uris = metadata.get("reference_file_hf_uris", [])
 
         if not reference_files:
             return ""
@@ -700,62 +738,49 @@ class GreenAgent:
         contents = []
         contents.append("\n\n--- REFERENCE FILES ---\n")
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
             for i, filename in enumerate(reference_files):
-                # Try URL first, then HuggingFace URI
                 url = reference_urls[i] if i < len(reference_urls) else None
-                hf_uri = reference_hf_uris[i] if i < len(reference_hf_uris) else None
+                if not url:
+                    contents.append(f"\n### File: {filename}\n[No URL provided]\n")
+                    continue
 
                 file_content = None
+                try:
+                    response = await client.get(url)
+                    if response.status_code == 200:
+                        raw_content = response.content
 
-                # Try fetching from URL
-                if url:
-                    try:
-                        response = await client.get(url)
-                        if response.status_code == 200:
-                            # Handle different file types
-                            if filename.endswith(('.txt', '.md', '.csv', '.json')):
+                        # Handle different file types
+                        if filename.endswith(('.txt', '.md', '.csv')):
+                            file_content = response.text
+                        elif filename.endswith('.json'):
+                            import json
+                            try:
+                                data = json.loads(response.text)
+                                file_content = json.dumps(data, indent=2)
+                            except:
                                 file_content = response.text
-                            elif filename.endswith(('.xlsx', '.xls')):
-                                # For Excel files, note that they're binary
-                                file_content = f"[Excel file: {filename} - {len(response.content)} bytes]"
-                            elif filename.endswith('.pdf'):
-                                file_content = f"[PDF file: {filename} - {len(response.content)} bytes]"
-                            else:
-                                file_content = response.text[:10000]  # Limit size
-                            logger.info(f"Fetched reference file: {filename} ({len(file_content)} chars)")
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch {filename} from URL: {e}")
+                        elif filename.endswith(('.xlsx', '.xls')):
+                            file_content = self._extract_excel_content(raw_content, filename)
+                        elif filename.endswith('.pdf'):
+                            file_content = self._extract_pdf_content(raw_content, filename)
+                        else:
+                            # Try as text
+                            try:
+                                file_content = response.text[:10000]
+                            except:
+                                file_content = f"[Binary file: {filename} - {len(raw_content)} bytes]"
 
-                # Try HuggingFace URI if URL failed
-                if not file_content and hf_uri:
-                    try:
-                        # Convert hf:// URI to raw URL
-                        # Format: hf://datasets/openai/gdp-val/files/xxx
-                        if hf_uri.startswith("hf://datasets/"):
-                            hf_path = hf_uri.replace("hf://datasets/", "")
-                            parts = hf_path.split("/", 2)
-                            if len(parts) >= 3:
-                                org, repo, file_path = parts[0], parts[1], parts[2]
-                                hf_url = f"https://huggingface.co/datasets/{org}/{repo}/resolve/main/{file_path}"
-                                response = await client.get(hf_url, follow_redirects=True)
-                                if response.status_code == 200:
-                                    if filename.endswith(('.txt', '.md', '.csv', '.json')):
-                                        file_content = response.text
-                                    else:
-                                        file_content = response.text[:10000]
-                                    logger.info(f"Fetched reference file from HF: {filename}")
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch {filename} from HuggingFace: {e}")
+                        logger.info(f"Fetched reference file: {filename} ({len(file_content) if file_content else 0} chars)")
+                    else:
+                        logger.warning(f"Failed to fetch {filename}: HTTP {response.status_code}")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch {filename}: {e}")
 
                 if file_content:
                     contents.append(f"\n### File: {filename}\n")
-                    # Truncate very large files
-                    if len(file_content) > 15000:
-                        contents.append(file_content[:15000])
-                        contents.append(f"\n... [truncated, total {len(file_content)} chars]\n")
-                    else:
-                        contents.append(file_content)
+                    contents.append(file_content)
                 else:
                     contents.append(f"\n### File: {filename}\n[Content unavailable]\n")
 
