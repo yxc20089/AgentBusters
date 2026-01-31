@@ -30,8 +30,8 @@ datasets:
     weight: 1.0
 
   - type: crypto
-    path: data/crypto/scenarios  # Use local scenarios
-    download_on_missing: false  # Don't download, use local data
+    path: data/crypto/cache  # Cache dir for downloaded scenarios
+    download_on_missing: true  # Download from EVAL_DATA_REPO
     limit: 2
     shuffle: false
     weight: 1.0
@@ -75,6 +75,12 @@ llm_eval:
   enabled: true
   model: gpt-4o-mini
   temperature: 0.0
+
+# Judge mode: "direct" (default) or "mcp" (Judge MCP server)
+# Use "mcp" mode for semantic/numeric/contradiction evaluation via Judge MCP
+judge:
+  mode: direct  # Change to "mcp" to use Judge MCP server
+  # mcp_url: http://localhost:8107  # Required if mode: mcp
 
 debate: false
 timeout_seconds: 300
