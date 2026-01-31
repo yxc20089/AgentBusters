@@ -27,5 +27,5 @@ RUN \
 # Entry point for the Green Agent A2A server
 ENV EVAL_CONFIG="config/eval_config.yaml"
 ENTRYPOINT ["uv", "run", "src/cio_agent/a2a_server.py"]
-CMD ["--host", "0.0.0.0", "--eval-config", "config/eval_config.yaml", "--store-predicted"]
+CMD ["--host", "0.0.0.0", "--eval-config", "config/eval_config.yaml", "--store-predicted", "--no-truncate-predicted"]
 EXPOSE 9109
