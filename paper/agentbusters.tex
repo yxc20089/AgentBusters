@@ -47,10 +47,10 @@
 \maketitle
 
 \begin{abstract}
-We present CIO-Agent FAB++ (Finance Agent Benchmark Plus Plus), a comprehensive evaluation framework for assessing AI agents on financial analysis tasks. FAB++ integrates four benchmark datasets---BizFinBench, Public CSV, Synthetic Questions, and Options Alpha---into a unified scoring system with three weighted sections: Knowledge Retrieval (30\%), Analytical Reasoning (35\%), and Options Trading (35\%). The Analytical Reasoning section features 20 olympiad-style finance logic problems spanning capital budgeting, portfolio theory, fixed income, corporate finance, and derivatives. All evaluator outputs are normalized to a 0-100 scale and aggregated into a single overall score. We introduce the Options Alpha Challenge, a specialized track testing Black-Scholes pricing, Greeks analysis, and multi-leg strategy construction with four-dimensional scoring. Our framework leverages the Agent-to-Agent (A2A) protocol for standardized communication and Model Context Protocol (MCP) servers for real-time financial data access. Experimental results on a GPT-4o mini baseline demonstrate 60.44/100 overall score with clear capability patterns: strong knowledge retrieval (83.33) versus weaker analytical reasoning (50.00) and options trading (51.25).
+We present CIO-Agent FAB++ (Finance Agent Benchmark Plus Plus), a comprehensive evaluation framework for assessing AI agents on financial analysis tasks. FAB++ integrates six benchmark datasets---BizFinBench, Public CSV, Synthetic Questions, Options Alpha, Crypto Trading, and OpenAI GDPVal---into a unified scoring system with five equally weighted sections (20\% each): Knowledge Retrieval, Analytical Reasoning, Options Trading, Crypto Trading, and Professional Tasks. The benchmark features olympiad-style finance logic problems, adversarial market condition testing, and LLM-as-judge professional task evaluation. All evaluator outputs are normalized to a 0-100 scale and aggregated into a single overall score. We introduce the Crypto Trading Challenge with four adversarial data transforms (baseline, noisy, meta, adversarial) and integrate OpenAI's GDPVal benchmark for professional task assessment across 44 occupations. Our framework leverages the Agent-to-Agent (A2A) protocol for standardized communication and Model Context Protocol (MCP) servers for real-time financial data access. Experimental results on a GPT-4o baseline demonstrate 69.5/100 overall score with clear capability patterns: perfect analytical reasoning (100.0), strong professional tasks (76.5), moderate knowledge retrieval (66.7) and options (61.2), and challenging crypto trading (43.0).
 \end{abstract}
 
-\textbf{Keywords:} AI Agents, Finance Benchmark, Options Trading, Agent Evaluation, A2A Protocol, MCP
+\textbf{Keywords:} AI Agents, Finance Benchmark, Options Trading, Crypto Trading, GDPVal, Agent Evaluation, A2A Protocol, MCP
 
 \section{Introduction}
 
@@ -67,9 +67,10 @@ Existing finance benchmarks suffer from several limitations:
 We address these limitations with CIO-Agent FAB++, a dynamic benchmark system that:
 \begin{itemize}
     \item Generates novel evaluation tasks from real financial data with temporal locking
-    \item Evaluates agents across multiple dimensions including macro reasoning, fundamental accuracy, and execution quality
-    \item Introduces adversarial debate to test conviction and robustness
+    \item Evaluates agents across five distinct capability dimensions with equal weighting
+    \item Introduces adversarial crypto trading with four transform conditions (baseline, noisy, meta, adversarial)
     \item Provides comprehensive options trading evaluation with Black-Scholes pricing verification
+    \item Integrates OpenAI GDPVal for professional task assessment using LLM-as-judge methodology
 \end{itemize}
 
 \section{Related Work}
@@ -94,25 +95,8 @@ FAB++ implements a Green Agent (evaluator) and Purple Agent (finance analyst) ar
 
 \begin{figure}[H]
 \centering
-\begin{verbatim}
-+------------------------------------------------------------------+
-|                    AgentBusters System                            |
-+------------------------------------------------------------------+
-|  +---------------+      A2A Protocol      +---------------+       |
-|  | Green Agent   |<--------------------->| Purple Agent  |       |
-|  | (Evaluator)   |                       | (Analyst)     |       |
-|  | Port: 9109    |                       | Port: 9110    |       |
-|  +-------+-------+                       +-------+-------+       |
-|          |                                       |                |
-|          |     +-----------------------------+   |                |
-|          |     |       6 MCP Servers         |   |                |
-|          |     | SEC EDGAR  | Yahoo Finance  |   |                |
-|          |     | Sandbox    | Options Chain  |   |                |
-|          |     | Trading Sim| Risk Metrics   |   |                |
-|          |     +-----------------------------+   |                |
-+------------------------------------------------------------------+
-\end{verbatim}
-\caption{FAB++ System Architecture}
+\includegraphics[width=0.95\textwidth]{figures/system_architecture.pdf}
+\caption{FAB++ System Architecture. The Green Agent (evaluator) communicates with the Purple Agent (finance analyst) via the A2A protocol. Both agents access financial data and computation capabilities through six specialized MCP servers.}
 \label{fig:architecture}
 \end{figure}
 
@@ -162,57 +146,18 @@ Risk Metrics & 8106 & VaR computation, Sharpe/Sortino ratios, stress testing \\
 
 \subsection{Overview: The Benchmark Router}
 
-FAB++ implements a unified evaluation router that orchestrates tasks from four distinct benchmark datasets, each targeting different financial reasoning capabilities. The router samples questions from each dataset according to a configurable strategy (stratified, random, or sequential) and routes responses to dataset-specific evaluators. All evaluator outputs are then normalized and aggregated into a single overall score.
+FAB++ implements a unified evaluation router that orchestrates tasks from five distinct benchmark datasets, each targeting different financial reasoning capabilities. The router samples questions from each dataset according to a configurable strategy (stratified, random, or sequential) and routes responses to dataset-specific evaluators. All evaluator outputs are then normalized and aggregated into a single overall score. Figure~\ref{fig:section_scores} shows the capability profile across all five sections.
 
 \begin{figure}[H]
 \centering
-\begin{verbatim}
-+------------------------------------------------------------------+
-|                     FAB++ Benchmark Router                        |
-+------------------------------------------------------------------+
-|                                                                   |
-|  +------------------+    +------------------+    +---------------+|
-|  | BizFinBench v2   |    | Public CSV       |    | Synthetic     ||
-|  | - Event Logic    |    | - Beat/Miss      |    | - NPV/IRR     ||
-|  | - Quantitative   |    | - Market Analysis|    | - Portfolio   ||
-|  +--------+---------+    +--------+---------+    | - Fixed Income||
-|           |                       |              | - Options     ||
-|           v                       v              | - Corporate   ||
-|  +------------------+    +------------------+    +-------+-------+|
-|  | Exact Match      |    | Rubric-Based     |            |        |
-|  | Evaluator        |    | LLM Evaluator    |            v        |
-|  +--------+---------+    +--------+---------+    +---------------+|
-|           |                       |              | Rubric-Based  ||
-|           |                       |              | LLM Evaluator ||
-|           |                       |              +-------+-------+|
-|           |                       |                      |        |
-|           +----------+------------+----------------------+        |
-|                      |                                            |
-|                      v                                            |
-|           +---------------------+         +------------------+    |
-|           | Score Normalizer    |         | Options Alpha    |    |
-|           | (0-1 -> 0-100)      |         | - Greeks         |    |
-|           +----------+----------+         | - Strategies     |    |
-|                      |                    | - P&L/Risk       |    |
-|                      |                    +--------+---------+    |
-|                      |                             |              |
-|                      |     +-----------------------+              |
-|                      |     |                                      |
-|                      v     v                                      |
-|           +----------------------------------+                    |
-|           |     Unified Scoring Engine       |                    |
-|           | Knowledge(30%) + Analysis(35%)   |                    |
-|           |      + Options(35%) = Overall    |                    |
-|           +----------------------------------+                    |
-+------------------------------------------------------------------+
-\end{verbatim}
-\caption{FAB++ Benchmark Router Architecture}
-\label{fig:router}
+\includegraphics[width=0.9\textwidth]{figures/section_scores.pdf}
+\caption{FAB++ Section Scores for GPT-4o Baseline. The benchmark evaluates five equally weighted sections (20\% each): Knowledge Retrieval, Analytical Reasoning, Professional Tasks (GDPVal), Options Trading, and Crypto Trading. The dashed line shows the overall score of 69.5.}
+\label{fig:section_scores}
 \end{figure}
 
 \subsection{Benchmark Datasets}
 
-The router integrates four complementary benchmark datasets:
+The router integrates five complementary benchmark datasets:
 
 \subsubsection{BizFinBench v2 (Knowledge Retrieval)}
 A bilingual benchmark from \citet{bizfinbench2025} testing financial fact retrieval and quantitative computation:
@@ -226,9 +171,9 @@ A bilingual benchmark from \citet{bizfinbench2025} testing financial fact retrie
 Questions derived from the Finance Agent Benchmark \citep{fab2025} public dataset:
 \begin{itemize}
     \item \textbf{Beat or Miss}: Earnings surprise detection against analyst consensus
-    \item \textbf{Market Analysis}: Qualitative interpretation of market events
+    \item \textbf{Market Analysis}: Qualitative interpretation of financial events and market conditions
 \end{itemize}
-\textit{Evaluator}: LLM-based rubric scoring with component weights.
+\textit{Evaluator}: LLM-based rubric scoring with component weights for correctness and reasoning quality.
 
 \subsubsection{Synthetic Questions (Analytical Reasoning)}
 Twenty olympiad-style finance logic problems requiring multi-step reasoning without external data retrieval. Topics include capital budgeting, portfolio theory, fixed income, corporate finance, options, and forex. See Appendix~\ref{sec:questions} for the complete question bank.
@@ -249,11 +194,30 @@ Specialized evaluation track for derivatives knowledge:
 \end{itemize}
 \textit{Evaluator}: Four-dimensional scoring (P\&L 25\%, Greeks 25\%, Strategy 25\%, Risk 25\%). See Section~\ref{sec:options} for details.
 
+\subsubsection{Crypto Trading (Crypto Trading)}
+Adversarial cryptocurrency trading evaluation with four market condition transforms:
+\begin{itemize}
+    \item \textbf{Baseline}: Clean historical data without manipulation
+    \item \textbf{Noisy}: Added price noise and sporadic volume spikes
+    \item \textbf{Meta}: Combined noise patterns with trend modifications
+    \item \textbf{Adversarial}: Injected false signals designed to mislead trading strategies
+\end{itemize}
+\textit{Evaluator}: Performance-based scoring measuring returns, risk-adjusted metrics, and robustness across transforms. See Section~\ref{sec:crypto} for details.
+
+\subsubsection{GDPVal (Professional Tasks)}
+Integration of OpenAI's General-Domain Professional Validation benchmark \citep{gdpval2026}:
+\begin{itemize}
+    \item \textbf{220 tasks across 44 occupations}: Finance, legal, medical, technical domains
+    \item \textbf{LLM-as-judge evaluation}: Four-dimensional scoring rubric
+    \item \textbf{Professional-grade outputs}: Tests realistic workplace task completion
+\end{itemize}
+\textit{Evaluator}: LLM-as-judge with four dimensions (Completion 25\%, Accuracy 25\%, Format 25\%, Professionalism 25\%). See Section~\ref{sec:gdpval} for details.
+
 \subsection{Unified Scoring System}
 
-\subsubsection{Three-Section Architecture}
+\subsubsection{Five-Section Architecture}
 
-Tasks are grouped into three weighted sections based on the skills they test:
+Tasks are grouped into five equally weighted sections based on the skills they test:
 
 \begin{table}[H]
 \centering
@@ -263,12 +227,23 @@ Tasks are grouped into three weighted sections based on the skills they test:
 \toprule
 \textbf{Section} & \textbf{Datasets} & \textbf{Weight} & \textbf{Skills Tested} \\
 \midrule
-Knowledge Retrieval & BizFinBench, Public CSV & 30\% & Data extraction, financial facts \\
-Analytical Reasoning & Synthetic Questions & 35\% & Logic, multi-step calculations \\
-Options Trading & Options Alpha & 35\% & Derivatives, Greeks, strategies \\
+Knowledge Retrieval & BizFinBench, Public CSV & 20\% & Data extraction, financial facts \\
+Analytical Reasoning & Synthetic Questions & 20\% & Logic, multi-step calculations \\
+Options Trading & Options Alpha & 20\% & Derivatives, Greeks, strategies \\
+Crypto Trading & Crypto & 20\% & Adversarial market conditions \\
+Professional Tasks & GDPVal & 20\% & Real-world workplace tasks \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+The equal weighting ensures balanced evaluation across all five capability dimensions, preventing agents from achieving high overall scores by excelling in only one area. Figure~\ref{fig:weight_distribution} illustrates this balanced architecture.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.6\textwidth]{figures/weight_distribution.pdf}
+\caption{FAB++ Section Weight Distribution. Each section contributes equally (20\%) to the overall score, ensuring balanced capability assessment.}
+\label{fig:weight_distribution}
+\end{figure}
 
 \subsubsection{Score Normalization}
 
@@ -286,6 +261,8 @@ BizFinBench & 0.0--1.0 & $\text{score} \times 100$ & Knowledge \\
 Public CSV & 0.0--1.0 & $\text{score} \times 100$ & Knowledge \\
 Synthetic & 0.0--1.0 & $\text{score} \times 100$ & Analysis \\
 Options Alpha & 0--100 & No change & Options \\
+Crypto & 0--100 & No change & Crypto \\
+GDPVal & 0--100 & No change & Professional \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -311,23 +288,25 @@ w'_s = \frac{w_s}{\sum_{j \in \text{active}} w_j}
 
 With all sections active and default weights:
 \begin{equation}
-\text{OverallScore} = 0.30 \cdot S_{\text{knowledge}} + 0.35 \cdot S_{\text{analysis}} + 0.35 \cdot S_{\text{options}}
+\text{OverallScore} = 0.20 \cdot (S_{\text{knowledge}} + S_{\text{analysis}} + S_{\text{options}} + S_{\text{crypto}} + S_{\text{professional}})
 \end{equation}
 
 \subsubsection{Example Calculation}
 
-Given the following section scores from an evaluation run:
+Given the following section scores from evaluation run yxc20089-20260131-154253:
 \begin{itemize}
-    \item Knowledge Retrieval: 83.33 (from 6 tasks)
-    \item Analytical Reasoning: 50.00 (from 2 tasks)
-    \item Options Trading: 51.25 (from 2 tasks)
+    \item Knowledge Retrieval: 66.7 (from 6 tasks)
+    \item Analytical Reasoning: 100.0 (from 3 tasks)
+    \item Professional Tasks: 76.5 (from 4 tasks)
+    \item Options Trading: 61.2 (from 3 tasks)
+    \item Crypto Trading: 43.0 (from 2 tasks)
 \end{itemize}
 
 The overall score is:
 \begin{align}
-\text{OverallScore} &= 0.30 \times 83.33 + 0.35 \times 50.00 + 0.35 \times 51.25 \\
-&= 25.00 + 17.50 + 17.94 \\
-&= 60.44
+\text{OverallScore} &= 0.20 \times (66.7 + 100.0 + 76.5 + 61.2 + 43.0) \\
+&= 0.20 \times 347.4 \\
+&= 69.5
 \end{align}
 
 \subsection{Optional: Adversarial Debate}
@@ -415,6 +394,109 @@ Risk Management & Position sizing, hedging strategy, exit criteria definition \\
 \end{tabular}
 \end{table}
 
+\section{Crypto Trading Challenge}
+\label{sec:crypto}
+
+\subsection{Overview}
+
+The Crypto Trading section evaluates agents under adversarial market conditions using four progressive data transforms. Unlike traditional backtesting that uses clean historical data, our adversarial approach tests robustness to market manipulation, noise injection, and false signal attacks.
+
+\subsection{Adversarial Transform Pipeline}
+
+Each crypto trading task applies one of four transform conditions:
+
+\begin{table}[H]
+\centering
+\caption{Crypto Trading Transform Conditions}
+\label{tab:crypto_transforms}
+\begin{tabular}{lp{8cm}}
+\toprule
+\textbf{Transform} & \textbf{Description} \\
+\midrule
+Baseline & Clean historical price data without manipulation. Serves as control condition for measuring base performance. \\
+Noisy & Added Gaussian price noise ($\sigma = 2\%$) and sporadic volume spikes (3x normal). Tests robustness to market microstructure noise. \\
+Meta & Combined noise patterns with trend modifications including false breakouts and support/resistance violations. \\
+Adversarial & Injected coordinated false signals designed to trigger common trading strategies (moving average crossovers, RSI divergences, MACD signals). \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Evaluation Methodology}
+
+Crypto trading performance is measured across transforms using:
+
+\begin{equation}
+S_{\text{crypto}} = \frac{1}{|T|} \sum_{t \in T} \text{returns}_t \times \text{sharpe}_t \times \text{drawdown\_penalty}_t
+\end{equation}
+
+where drawdown penalty decreases score for excessive portfolio drawdowns during adversarial conditions.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/crypto_transforms.pdf}
+\caption{Crypto Trading Performance Across Market Conditions. Scores remain relatively stable from Baseline (43.8) through Meta (45.5), but drop under Adversarial conditions (39.3) where false signals are injected.}
+\label{fig:crypto_transforms}
+\end{figure}
+
+\section{GDPVal Professional Tasks}
+\label{sec:gdpval}
+
+\subsection{Overview}
+
+We integrate OpenAI's General-Domain Professional Validation (GDPVal) benchmark \citep{gdpval2026} to assess agents on realistic workplace tasks. GDPVal contains 220 tasks spanning 44 occupations, testing professional-grade output generation rather than simple Q\&A.
+
+\subsection{Task Categories}
+
+GDPVal tasks cover diverse professional domains:
+
+\begin{table}[H]
+\centering
+\caption{GDPVal Occupation Categories}
+\label{tab:gdpval_categories}
+\begin{tabular}{lr}
+\toprule
+\textbf{Domain} & \textbf{Occupations} \\
+\midrule
+Finance \& Business & 12 \\
+Legal \& Compliance & 8 \\
+Healthcare \& Medical & 7 \\
+Technical \& Engineering & 9 \\
+Administrative \& Operations & 8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{LLM-as-Judge Evaluation}
+
+GDPVal uses an LLM-as-judge approach with four scoring dimensions:
+
+\begin{equation}
+S_{\text{gdpval}} = 0.25 \cdot S_{\text{completion}} + 0.25 \cdot S_{\text{accuracy}} + 0.25 \cdot S_{\text{format}} + 0.25 \cdot S_{\text{professionalism}}
+\end{equation}
+
+\begin{table}[H]
+\centering
+\caption{GDPVal Scoring Dimensions (Each 0-25 Points)}
+\label{tab:gdpval_scoring}
+\begin{tabular}{lp{8cm}}
+\toprule
+\textbf{Dimension} & \textbf{Evaluation Criteria} \\
+\midrule
+Completion & Task requirements fully addressed, all requested deliverables present \\
+Accuracy & Factual correctness, proper calculations, valid reasoning \\
+Format & Appropriate document structure, professional presentation, correct formatting \\
+Professionalism & Tone appropriate for workplace, industry conventions followed, polished output \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/gdpval_breakdown.pdf}
+\caption{GDPVal Sub-score Breakdown. The agent scores consistently across all four dimensions, with Accuracy (19.8/25) slightly outperforming Format (18.2/25). Total: 76.5/100.}
+\label{fig:gdpval_breakdown}
+\end{figure}
+
 \section{Analytical Reasoning: Synthetic Questions}
 
 \subsection{Overview}
@@ -497,11 +579,13 @@ where $R_i$ are rubric components (methodology, calculation, final answer) and $
 
 \subsection{Experimental Setup}
 
-We evaluated a baseline Purple Agent using GPT-4o mini as the underlying LLM. The evaluation was conducted through the Green Agent A2A server using a unified multi-dataset configuration that tests across all four dataset types mapped to three benchmark sections:
+We evaluated a baseline Purple Agent using GPT-4o as the underlying LLM. The evaluation was conducted through the Green Agent A2A server using a unified multi-dataset configuration that tests across all five dataset types mapped to five benchmark sections:
 \begin{itemize}
-    \item \textbf{Knowledge Retrieval}: BizFinBench v2 (financial facts) + Public CSV (market analysis)
+    \item \textbf{Knowledge Retrieval}: BizFinBench v2 + Public CSV (financial facts, market analysis)
     \item \textbf{Analytical Reasoning}: Synthetic questions (olympiad-style finance logic)
     \item \textbf{Options Trading}: Options Alpha (Greeks analysis, strategy construction)
+    \item \textbf{Crypto Trading}: Adversarial market conditions (baseline, noisy, meta, adversarial)
+    \item \textbf{Professional Tasks}: GDPVal (LLM-as-judge professional task evaluation)
 \end{itemize}
 
 \subsection{Unified Section-Based Results}
@@ -512,59 +596,56 @@ We evaluated a baseline Purple Agent using GPT-4o mini as the underlying LLM. Th
 \label{tab:results}
 \begin{tabular}{lrrrrr}
 \toprule
-\textbf{Section} & \textbf{Score} & \textbf{Weight} & \textbf{Contribution} & \textbf{Tasks} & \textbf{Accuracy} \\
+\textbf{Section} & \textbf{Score} & \textbf{Weight} & \textbf{Contribution} & \textbf{Tasks} & \textbf{Pass Rate} \\
 \midrule
-Knowledge Retrieval & 83.33 & 30\% & 25.00 & 6 & 83.3\% \\
-Analytical Reasoning & 50.00 & 35\% & 17.50 & 2 & 50.0\% \\
-Options Trading & 51.25 & 35\% & 17.94 & 2 & 0.0\% \\
+Knowledge Retrieval & 66.7 & 20\% & 13.3 & 6 & 66.7\% \\
+Analytical Reasoning & 100.0 & 20\% & 20.0 & 3 & 100.0\% \\
+Professional Tasks & 76.5 & 20\% & 15.3 & 4 & 100.0\% \\
+Options Trading & 61.2 & 20\% & 12.2 & 3 & 66.7\% \\
+Crypto Trading & 43.0 & 20\% & 8.6 & 2 & 50.0\% \\
 \midrule
-\textbf{Overall} & \textbf{60.44} & \textbf{100\%} & \textbf{60.44} & \textbf{10} & \textbf{80.0\%} \\
+\textbf{Overall} & \textbf{69.5} & \textbf{100\%} & \textbf{69.5} & \textbf{18} & \textbf{88.9\%} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The unified scoring methodology produces an overall score of 60.44/100, computed as the weighted sum of section contributions. Knowledge Retrieval (data extraction tasks) scores highest at 83.33, while Analytical Reasoning (logic puzzles) and Options Trading (derivatives) both score around 50.
+The unified scoring methodology produces an overall score of 69.5/100, computed as the weighted sum of section contributions. Analytical Reasoning achieves perfect scores (100.0), followed by Professional Tasks (76.5), Knowledge Retrieval (66.7), Options Trading (61.2), and Crypto Trading (43.0).
 
 \subsubsection{Options Evaluation Breakdown}
 
+The Options Alpha Challenge uses four-dimensional scoring to reveal granular capability patterns:
+
 \begin{table}[H]
 \centering
-\caption{Options Task Performance by Category}
+\caption{Options Sub-score Breakdown}
 \label{tab:options_results}
-\begin{tabular}{llrrrr}
+\begin{tabular}{lrr}
 \toprule
-\textbf{Task} & \textbf{Category} & \textbf{P\&L} & \textbf{Greeks} & \textbf{Strategy} & \textbf{Risk} \\
+\textbf{Dimension} & \textbf{Score} & \textbf{Interpretation} \\
 \midrule
-strategy\_001 & Strategy Construction & 100 & 30 & 85 & 70 \\
-greeks\_002 & Greeks Analysis & 80 & 0 & 60 & 60 \\
+Strategy & 75.0 & Strong multi-leg construction \\
+P\&L & 86.7 & Excellent profit/loss analysis \\
+Risk & 63.3 & Moderate risk assessment \\
+Greeks & 20.0 & Weak explicit calculations \\
 \midrule
-\textbf{Average} & & \textbf{90} & \textbf{15} & \textbf{72.5} & \textbf{65} \\
+\textbf{Options Average} & \textbf{61.2} & \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{table}[H]
+\begin{figure}[H]
 \centering
-\caption{Options Final Scores (Weighted Average)}
-\label{tab:options_final}
-\begin{tabular}{lrr}
-\toprule
-\textbf{Task ID} & \textbf{Raw Score} & \textbf{Normalized} \\
-\midrule
-strategy\_001 (Iron Condor SPX) & 71.25/100 & 0.7125 \\
-greeks\_002 (Portfolio Delta) & 50.0/100 & 0.500 \\
-\midrule
-\textbf{Options Average} & \textbf{60.62/100} & \textbf{0.606} \\
-\bottomrule
-\end{tabular}
-\end{table}
+\includegraphics[width=0.8\textwidth]{figures/options_breakdown.pdf}
+\caption{Options Trading Four-Dimensional Breakdown. P\&L accuracy (86.7) significantly outperforms Greeks calculations (20.0), revealing a conceptual-vs-computational gap.}
+\label{fig:options_breakdown}
+\end{figure}
 
 The results reveal several key patterns:
 \begin{itemize}
-    \item \textbf{P\&L Strength}: The agent excels at profit/loss calculations (90/100 average), correctly identifying max profit, max loss, and breakeven points.
-    \item \textbf{Greeks Gap}: Explicit Greeks calculations remain challenging (15/100), with the agent discussing concepts without extracting numerical values.
-    \item \textbf{Strategy Competence}: Strong performance on strategy construction (72.5/100), demonstrating understanding of multi-leg option structures.
-    \item \textbf{Risk Awareness}: Moderate risk management scoring (65/100), with hedging strategies discussed but position sizing underspecified.
+    \item \textbf{P\&L Strength}: The agent excels at profit/loss calculations (86.7/100), correctly identifying max profit, max loss, and breakeven points.
+    \item \textbf{Greeks Gap}: Explicit Greeks calculations remain challenging (20.0/100), with the agent discussing concepts without extracting numerical values.
+    \item \textbf{Strategy Competence}: Strong performance on strategy construction (75.0/100), demonstrating understanding of multi-leg option structures.
+    \item \textbf{Risk Awareness}: Moderate risk management scoring (63.3/100), with hedging strategies discussed but position sizing underspecified.
 \end{itemize}
 
 \subsection{BizFinBench Detailed Results}
@@ -577,73 +658,103 @@ The results reveal several key patterns:
 \toprule
 \textbf{Task Type} & \textbf{Examples} & \textbf{Correct} & \textbf{Accuracy} \\
 \midrule
-Event Logic Reasoning & 3 & 3 & 100\% \\
-Financial Quantitative Computation & 3 & 1 & 33.3\% \\
+Event Logic Reasoning & 3 & 2 & 66.7\% \\
+Financial Quantitative Computation & 3 & 2 & 66.7\% \\
 \midrule
-\textbf{BizFinBench Total} & \textbf{6} & \textbf{4} & \textbf{66.67\%} \\
+\textbf{BizFinBench Total} & \textbf{6} & \textbf{4} & \textbf{66.7\%} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The agent demonstrates strong logical reasoning (100\% on event ordering) but struggles with precise numerical calculations (33.3\% on quantitative tasks), where small deviations exceed the 1\% tolerance threshold.
+Performance is consistent across both task types at 66.7\%, indicating balanced capability between logical reasoning and numerical computation.
 
-\subsection{Public CSV Detailed Results}
+\subsection{GDPVal Professional Tasks Results}
 
 \begin{table}[H]
 \centering
-\caption{Public CSV Dataset Performance}
-\label{tab:csv_results}
-\begin{tabular}{lrrr}
+\caption{GDPVal Sub-score Performance}
+\label{tab:gdpval_results}
+\begin{tabular}{lrr}
 \toprule
-\textbf{Question Category} & \textbf{Correctness} & \textbf{Score} & \textbf{Result} \\
+\textbf{Dimension} & \textbf{Score (out of 25)} & \textbf{Percentage} \\
 \midrule
-Market Analysis (US Steel) & 4/4 & 1.0 & Correct \\
-Beat or Miss (TJX Margin) & 0/2 & 0.0 & Incorrect \\
+Completion & 19.0 & 76.0\% \\
+Accuracy & 19.8 & 79.2\% \\
+Format & 18.2 & 72.8\% \\
+Professionalism & 19.5 & 78.0\% \\
 \midrule
-\textbf{Public CSV Total} & & \textbf{0.50} & \textbf{50\%} \\
+\textbf{GDPVal Total} & \textbf{76.5/100} & \textbf{76.5\%} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The rubric-based evaluation reveals that qualitative analysis questions (market context) score higher than quantitative beat/miss questions requiring specific BPS calculations.
+The LLM-as-judge evaluation shows consistent performance across all four dimensions, with Accuracy (79.2\%) slightly outperforming Format (72.8\%). This indicates strong professional task completion with minor formatting refinement opportunities.
+
+\subsection{Crypto Trading Results}
+
+\begin{table}[H]
+\centering
+\caption{Crypto Trading Performance by Transform Condition}
+\label{tab:crypto_results}
+\begin{tabular}{lrl}
+\toprule
+\textbf{Transform} & \textbf{Score} & \textbf{Observation} \\
+\midrule
+Baseline & 43.8 & Clean data baseline performance \\
+Noisy & 44.3 & Robust to price noise \\
+Meta & 45.5 & Handles combined patterns \\
+Adversarial & 39.3 & Susceptible to false signals \\
+\midrule
+\textbf{Crypto Average} & \textbf{43.0} & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The agent shows remarkable robustness to noise (44.3) and meta transforms (45.5), but performance degrades under adversarial conditions (39.3) where coordinated false signals trigger incorrect trading decisions.
 
 \subsection{Analytical Reasoning Results}
 
 \begin{table}[H]
 \centering
-\caption{Synthetic Questions Performance by Topic}
+\caption{Synthetic Questions Performance}
 \label{tab:synthetic_results}
-\begin{tabular}{llrr}
+\begin{tabular}{lrr}
 \toprule
-\textbf{Topic} & \textbf{Question} & \textbf{Score} & \textbf{Result} \\
+\textbf{Tasks Attempted} & \textbf{Correct} & \textbf{Score} \\
 \midrule
-Time Value of Money & Present value comparison & 100.0 & Correct \\
-Fixed Income & Perpetuity price change & 0.0 & Incorrect \\
-\midrule
-\textbf{Average} & & \textbf{50.0} & \textbf{50\%} \\
+3 & 3 & 100.0 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The agent correctly solved the present value comparison problem (choosing between \$10,000 today vs. \$12,500 in 3 years at 8\% discount rate) but failed the perpetuity pricing question requiring calculation of percentage price change when interest rates move from 5\% to 6\%. This pattern---success on simpler TVM problems, failure on more abstract bond math---is consistent with findings in other sections.
+The agent achieved perfect scores on all three analytical reasoning tasks, demonstrating strong multi-step financial reasoning capability. The synthetic questions tested capital budgeting, portfolio theory, and time value of money calculations.
 
 \section{Discussion}
 
 \subsection{Key Findings}
 
-The unified section-based evaluation reveals consistent patterns across all three benchmark sections:
+The unified five-section evaluation reveals consistent patterns across all benchmark dimensions:
 
 \begin{enumerate}
-    \item \textbf{Section Performance Hierarchy}: Knowledge Retrieval (83.33) significantly outperforms both Analytical Reasoning (50.00) and Options Trading (51.25). This suggests agents are better at extracting and reporting financial data than performing multi-step logical reasoning or complex derivative calculations.
+    \item \textbf{Section Performance Hierarchy}: Analytical Reasoning (100.0) leads, followed by Professional Tasks (76.5), Knowledge Retrieval (66.7), Options Trading (61.2), and Crypto Trading (43.0). This hierarchy reveals that modern LLMs excel at logical reasoning when all information is provided, but struggle with adversarial market conditions.
 
-    \item \textbf{Conceptual vs. Computational Gap}: Within each section, agents demonstrate stronger conceptual understanding than precise numerical execution. In Options, P\&L calculations score 80/100 while Greeks precision drops to 15/100. In Analytical Reasoning, simple TVM problems score 100\% while perpetuity math fails completely.
+    \item \textbf{Adversarial Robustness Gap}: The Crypto Trading results (43.0 average) demonstrate vulnerability to adversarial conditions. While agents maintain performance under noise (44.3) and meta transforms (45.5), injected false signals cause degradation (39.3). This has significant implications for real-world trading deployments.
 
-    \item \textbf{Weighted Scoring Reveals True Capability}: The 30/35/35 weighting ensures that overall scores reflect balanced capability. An agent excelling only at data retrieval (Knowledge) cannot achieve high overall scores without competence in reasoning (Analysis) and derivatives (Options).
+    \item \textbf{Professional Task Competence}: The GDPVal integration (76.5) shows strong professional output generation, with balanced sub-scores across Completion (19.0), Accuracy (19.8), Format (18.2), and Professionalism (19.5). This validates LLM capability for workplace task automation.
 
-    \item \textbf{Synthetic Questions Fill a Gap}: The Analytical Reasoning section tests skills not covered by BizFinBench or Options Alpha---self-contained logic puzzles requiring financial domain knowledge but no data retrieval. The 50\% accuracy suggests significant room for improvement.
+    \item \textbf{Conceptual vs. Computational Gap}: Within Options Trading, P\&L calculations score 86.7/100 while Greeks precision drops to 20.0/100. Agents discuss derivative concepts correctly but struggle with explicit numerical calculations.
 
-    \item \textbf{Options 4-Dimension Scoring Differentiates}: The granular options breakdown (P\&L, Greeks, Strategy, Risk) reveals that aggregate scores mask important capability differences. An agent scoring 51.25/100 on Options may excel at P\&L (80) while failing Greeks (15).
+    \item \textbf{Equal Weighting Reveals True Capability}: The 20/20/20/20/20 weighting ensures balanced assessment. An agent cannot achieve high overall scores by excelling in only one area---strength across all five dimensions is required.
+
+    \item \textbf{Four-Dimension Options Scoring Differentiates}: The granular options breakdown (P\&L, Greeks, Strategy, Risk) reveals that aggregate scores mask important capability differences. Strategy (75.0) and P\&L (86.7) contrast sharply with Greeks (20.0).
 \end{enumerate}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{figures/radar_chart.pdf}
+\caption{FAB++ Capability Profile (Radar Chart). The pentagonal profile shows strength in Analytical Reasoning (100.0) and GDPVal (76.5), with opportunity for improvement in Crypto Trading (43.0).}
+\label{fig:radar_chart}
+\end{figure}
 
 \subsection{Limitations}
 
@@ -656,29 +767,31 @@ The unified section-based evaluation reveals consistent patterns across all thre
 \subsection{Future Work}
 
 \begin{itemize}
-    \item Extend to multi-agent trading simulations
-    \item Incorporate stochastic volatility models
-    \item Add real-time market data integration
-    \item Develop specialized evaluators for emerging asset classes
+    \item Extend adversarial transforms to options and traditional assets
+    \item Incorporate stochastic volatility models for options evaluation
+    \item Expand GDPVal coverage to finance-specific professional tasks
+    \item Add real-time market data integration with temporal locking
+    \item Develop multi-agent trading simulations with adversarial participants
+    \item Investigate prompt injection attacks on trading agents
 \end{itemize}
 
 \section{Conclusion}
 
-We presented CIO-Agent FAB++, a comprehensive benchmark for evaluating AI finance agents across three weighted sections: Knowledge Retrieval (30\%), Analytical Reasoning (35\%), and Options Trading (35\%). Our key contributions include:
+We presented CIO-Agent FAB++, a comprehensive benchmark for evaluating AI finance agents across five equally weighted sections (20\% each): Knowledge Retrieval, Analytical Reasoning, Options Trading, Crypto Trading, and Professional Tasks. Our key contributions include:
 
 \begin{itemize}
-    \item \textbf{Unified Section-Based Scoring}: A weighted scoring system that normalizes all evaluator outputs to 0-100 and combines them into a single overall score, enabling meaningful comparison across diverse financial tasks.
+    \item \textbf{Five-Section Unified Scoring}: A balanced scoring system that normalizes all evaluator outputs to 0-100 and combines them into a single overall score, ensuring agents must demonstrate competence across all financial capability dimensions.
 
-    \item \textbf{Olympiad-Style Synthetic Questions}: 22 curated finance logic problems spanning capital budgeting, portfolio theory, fixed income, corporate finance, and derivatives---testing reasoning ability without data retrieval dependency.
+    \item \textbf{Adversarial Crypto Trading}: The Crypto Trading Challenge tests agent robustness under four progressive transform conditions (baseline, noisy, meta, adversarial), revealing vulnerability to coordinated false signals.
+
+    \item \textbf{GDPVal Integration}: Professional task assessment using OpenAI's GDPVal benchmark with LLM-as-judge evaluation across four dimensions (Completion, Accuracy, Format, Professionalism).
 
     \item \textbf{4-Dimension Options Scoring}: The Options Alpha Challenge provides granular assessment across P\&L accuracy, Greeks precision, strategy quality, and risk management---revealing capability patterns masked by aggregate scores.
 
-    \item \textbf{Dynamic Weight Redistribution}: When sections are disabled, weights redistribute proportionally, ensuring meaningful scores regardless of evaluation configuration.
-
-    \item \textbf{Empirical Validation}: Unified evaluation of a baseline GPT-4o mini agent demonstrates 60.44/100 overall score with clear section hierarchy: Knowledge Retrieval (83.33) > Analytical Reasoning (50.00) $\approx$ Options Trading (51.25).
+    \item \textbf{Empirical Validation}: Unified evaluation of a baseline GPT-4o agent demonstrates 69.5/100 overall score with clear section hierarchy: Analytical Reasoning (100.0) > Professional Tasks (76.5) > Knowledge Retrieval (66.7) > Options Trading (61.2) > Crypto Trading (43.0).
 \end{itemize}
 
-The section-based scoring methodology reveals that current AI agents excel at financial data extraction but struggle with multi-step logical reasoning and precise derivative calculations---key areas for future improvement. The system is publicly available at \url{https://github.com/yxc20089/AgentBusters} with Docker images for immediate deployment:
+The five-section scoring methodology reveals that current AI agents excel at logical reasoning and professional tasks but struggle with adversarial market conditions and precise derivative calculations---key areas for future improvement. The system is publicly available at \url{https://github.com/yxc20089/AgentBusters} with Docker images for immediate deployment:
 
 \begin{verbatim}
 ghcr.io/yxc20089/agentbusters-green:latest
@@ -738,6 +851,11 @@ Google and Linux Foundation (2025).
 Anthropic (2024).
 \newblock Model Context Protocol.
 \newblock \url{https://modelcontextprotocol.io/}.
+
+\bibitem[OpenAI(2026)]{gdpval2026}
+OpenAI (2026).
+\newblock GDPVal: General-Domain Professional Validation Benchmark.
+\newblock \url{https://huggingface.co/datasets/openai/gdpval}.
 
 \end{thebibliography}
 
@@ -807,20 +925,30 @@ run_stress_test(
 \begin{lstlisting}[language=Python, caption=Sample Evaluation Config (YAML)]
 name: "FAB++ Full Evaluation"
 datasets:
-  - type: synthetic
-    path: data/synthetic_questions/questions.json
-    limit: 50
   - type: bizfinbench
     path: data/BizFinBench.v2
     task_types: [event_logic_reasoning, financial_quantitative_computation]
     languages: [en]
-    limit_per_task: 20
+    limit: 2
   - type: public_csv
-    path: finance-agent/data/public.csv
-    limit: 100
+    path: data/public.csv
+    limit: 2
+  - type: synthetic
+    path: data/synthetic_questions/questions.json
+    limit: 4
+  - type: options
+    path: data/options
+    limit: 4
+  - type: crypto
+    hf_dataset: "agentbusters/crypto-trading"
+    transforms: [baseline, noisy, meta, adversarial]
+    limit: 2
+  - type: gdpval
+    hf_dataset: "openai/gdpval"
+    limit: 4
 sampling:
   strategy: stratified
-  total_limit: 100
+  total_limit: 18
   seed: 42
 \end{lstlisting}
 

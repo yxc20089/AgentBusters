@@ -18,6 +18,9 @@ COPY pyproject.toml .
 COPY src/ ./src/
 COPY scripts/ ./scripts/
 
+# Copy FAB benchmark data for public_csv questions
+COPY finance-agent/data/public.csv ./data/public.csv
+
 # Install only the dependencies needed for Purple Agent (no PyTorch/sentence-transformers)
 RUN uv pip install --system \
     httpx>=0.25.0 \
@@ -40,7 +43,11 @@ RUN uv pip install --system \
     fastapi>=0.100.0 \
     uvicorn>=0.38.0 \
     sqlalchemy>=2.0.0 \
-    fastmcp>=2.0.0
+    fastmcp>=2.0.0 \
+    tavily-python>=0.3.0 \
+    PyMuPDF>=1.24.0 \
+    python-docx>=1.0.0 \
+    openpyxl>=3.1.0
 
 # Install the purple agent package
 RUN uv pip install --system -e . --no-deps
@@ -53,6 +60,7 @@ ENV PYTHONUNBUFFERED=1
 ENV HOST=0.0.0.0
 ENV PORT=9110
 ENV PYTHONPATH=/app/src:/app
+ENV FAB_DATA_PATH=/app/data/public.csv
 
 # Run the Purple Agent server (ENTRYPOINT + CMD for docker-compose compatibility)
 ENTRYPOINT ["purple-agent", "serve"]

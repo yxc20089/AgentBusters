@@ -47,7 +47,12 @@ dependencies = [
     # MCP Protocol Support
     "fastmcp>=2.0.0",
     # HuggingFace datasets for dynamic benchmark retrieval
-    "datasets>=2.14.0",
+    # Pin to <3.0.0 to maintain trust_remote_code support for GDPVal
+    "datasets>=2.14.0,<3.0.0",
+    # Tavily for web search MCP tools
+    "tavily-python>=0.3.0",
+    "openpyxl>=3.1.5",
+    "pypdf>=4.0.0",
 ]
 
 [project.optional-dependencies]

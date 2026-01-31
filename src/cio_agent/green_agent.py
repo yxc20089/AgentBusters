@@ -15,9 +15,13 @@ Supported modes:
 
 import json
 import os
+import httpx
+import logging
 from pathlib import Path
 from typing import Any, Optional, List, Union
 from pydantic import BaseModel
+
+logger = logging.getLogger("cio_agent.green_agent")
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, TaskState, Part, TextPart, DataPart
 from a2a.utils import get_message_text, new_agent_text_message
@@ -681,6 +685,99 @@ class GreenAgent:
             return response
         return response[: self.predicted_max_chars] + "..."
 
+    def _extract_excel_content(self, content: bytes, filename: str) -> str:
+        """Extract content from Excel file as formatted text."""
+        import io
+        try:
+            import pandas as pd
+            xlsx = pd.ExcelFile(io.BytesIO(content))
+            parts = [f"Excel file with {len(xlsx.sheet_names)} sheet(s): {xlsx.sheet_names}\n"]
+
+            for sheet_name in xlsx.sheet_names:
+                df = pd.read_excel(xlsx, sheet_name=sheet_name)
+                parts.append(f"\n--- Sheet: {sheet_name} ({df.shape[0]} rows × {df.shape[1]} cols) ---\n")
+                parts.append(df.to_csv(index=False))
+
+            return "".join(parts)
+        except Exception as e:
+            logger.warning(f"Failed to extract Excel content from {filename}: {e}")
+            return f"[Excel file: {filename} - {len(content)} bytes, extraction failed: {e}]"
+
+    def _extract_pdf_content(self, content: bytes, filename: str) -> str:
+        """Extract text content from PDF file."""
+        try:
+            import pypdf
+            import io
+            reader = pypdf.PdfReader(io.BytesIO(content))
+            parts = [f"PDF file with {len(reader.pages)} page(s)\n"]
+
+            for i, page in enumerate(reader.pages):
+                text = page.extract_text()
+                if text:
+                    parts.append(f"\n--- Page {i+1} ---\n")
+                    parts.append(text)
+
+            return "".join(parts)
+        except ImportError:
+            return f"[PDF file: {filename} - {len(content)} bytes, pypdf not installed]"
+        except Exception as e:
+            logger.warning(f"Failed to extract PDF content from {filename}: {e}")
+            return f"[PDF file: {filename} - {len(content)} bytes, extraction failed: {e}]"
+
+    def _format_reference_files_for_agent(self, metadata: dict) -> str:
+        """
+        Format reference files as URLs for Purple Agent to fetch on demand.
+
+        Instead of fetching and embedding file contents, this provides the file
+        URLs so Purple Agent can use fetch_reference_file tool to retrieve them.
+
+        Args:
+            metadata: Example metadata containing reference_file_urls or reference_file_hf_uris
+
+        Returns:
+            Formatted string with reference file URLs and instructions
+        """
+        reference_files = metadata.get("reference_files", [])
+        reference_urls = metadata.get("reference_file_urls", [])
+
+        if not reference_files:
+            return ""
+
+        lines = []
+        lines.append("\n\n--- REFERENCE FILES AVAILABLE ---")
+        lines.append("The following reference files are available for this task.")
+        lines.append("Use the fetch_reference_file tool to download and read any files you need.\n")
+
+        for i, filename in enumerate(reference_files):
+            url = reference_urls[i] if i < len(reference_urls) else None
+            # Detect file type from extension
+            ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "unknown"
+            file_type_map = {
+                "pdf": "PDF document",
+                "xlsx": "Excel spreadsheet",
+                "xls": "Excel spreadsheet",
+                "csv": "CSV data file",
+                "json": "JSON data file",
+                "txt": "Text file",
+                "md": "Markdown file",
+                "docx": "Word document",
+                "png": "Image (PNG)",
+                "jpg": "Image (JPEG)",
+                "jpeg": "Image (JPEG)",
+            }
+            file_type = file_type_map.get(ext, f"{ext.upper()} file")
+
+            if url:
+                lines.append(f"- {filename} ({file_type})")
+                lines.append(f"  URL: {url}")
+            else:
+                lines.append(f"- {filename} ({file_type}) [URL not available]")
+
+        lines.append("\n--- END REFERENCE FILES ---\n")
+
+        logger.info(f"Formatted {len(reference_files)} reference file URLs for Purple Agent")
+        return "\n".join(lines)
+
     def _convert_synthetic_to_tasks(self, num_tasks: int) -> list[FABTask]:
         """
         Convert synthetic question dicts to FABTask objects.
@@ -915,9 +1012,21 @@ class GreenAgent:
             try:
                 response = ""
                 if example.dataset_type != "crypto":
+                    # Build message with reference file URLs for GDPVal
+                    # Purple Agent will use fetch_reference_file tool to download files as needed
+                    message = example.question
+                    if example.dataset_type == "gdpval" and example.metadata.get("has_reference_files"):
+                        try:
+                            reference_info = self._format_reference_files_for_agent(example.metadata)
+                            if reference_info:
+                                message = example.question + reference_info
+                                logger.info(f"Added reference file URLs to GDPVal task (Purple Agent will fetch on demand)")
+                        except Exception as e:
+                            logger.warning(f"Failed to format reference files for {example.example_id}: {e}")
+
                     # Send question to Purple Agent
                     response = await self.messenger.talk_to_agent(
-                        message=example.question,
+                        message=message,
                         url=purple_agent_url,
                         new_conversation=True,
                         timeout=self.eval_config.timeout_seconds if self.eval_config else 300,
