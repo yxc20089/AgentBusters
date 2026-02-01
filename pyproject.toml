@@ -24,7 +24,7 @@ classifiers = [
 dependencies = [
     "httpx>=0.25.0",
     "pydantic>=2.12.5",
-    "openai>=1.0.0",
+    "openai>=2.16.0",  # Requires >=2.16.0 for httpx 0.28+ compatibility (proxy vs proxies)
     "anthropic>=0.18.0",
     "tiktoken>=0.5.0",
     "numpy>=1.24.0",
@@ -47,8 +47,8 @@ dependencies = [
     # MCP Protocol Support
     "fastmcp>=2.0.0",
     # HuggingFace datasets for dynamic benchmark retrieval
-    # Pin to <3.0.0 to maintain trust_remote_code support for GDPVal
-    "datasets>=2.14.0,<3.0.0",
+    "datasets>=4.0.0",  # Requires >=4.0.0 to fix dataclass compatibility issues
+    "huggingface-hub>=1.0.0",  # Ensure compatible version with datasets
     # Tavily for web search MCP tools
     "tavily-python>=0.3.0",
     "openpyxl>=3.1.5",
