@@ -3,54 +3,125 @@
 
 experiments:
   # ============================================
-  # 实验 1: 不同开源 LLM 模型对比
+  # 实验 0a: B200 顶配模型对比 (NVIDIA B200 192GB)
   # ============================================
-  - name: "model_comparison"
-    description: "Compare different open-source LLM models"
+  - name: "b200_model_comparison"
+    description: "Compare flagship models on B200: Qwen3-235B (1x) vs DeepSeek-V3 (3x)"
     configs:
-      # Llama 3.1 系列
-      - id: "llama3.1-70b"
-        llm_model: "meta-llama/llama-3.1-70b-instruct"
-        llm_api_base: "http://localhost:8000/v1"  # vLLM
+      # Qwen3-235B-A22B - 单卡 B200 运行!
+      - id: "qwen3-235b-b200"
+        llm_model: "Qwen/Qwen3-235B-A22B"
+        llm_api_base: "http://localhost:8000/v1"
+        eval_config: "config/eval_large.yaml"
+        num_tasks: 500
+        notes: "1x B200 192GB, 65K context, BF16"
+        
+      # DeepSeek-V3.2-671B - 3x B200 全精度
+      - id: "deepseek-v3-b200"
+        llm_model: "deepseek-ai/DeepSeek-V3"
+        llm_api_base: "http://localhost:8000/v1"
+        eval_config: "config/eval_large.yaml"
+        num_tasks: 500
+        notes: "3x B200 192GB, 65K context, BF16 full precision"
+
+  # ============================================
+  # 实验 0b: H100 顶配模型对比 (8x H100 80GB)
+  # ============================================
+  - name: "flagship_model_comparison"
+    description: "Compare flagship models: DeepSeek-V3-FP8 vs Qwen3-235B (8x H100)"
+    configs:
+      # DeepSeek-V3.2-671B FP8 原生
+      - id: "deepseek-v3-fp8"
+        llm_model: "deepseek-ai/DeepSeek-V3"
+        llm_api_base: "http://localhost:8000/v1"
+        eval_config: "config/eval_large.yaml"
+        num_tasks: 500
+        notes: "FP8 native, 8x H100 80GB"
+        
+      # Qwen3-235B-A22B MoE
+      - id: "qwen3-235b"
+        llm_model: "Qwen/Qwen3-235B-A22B"
+        llm_api_base: "http://localhost:8000/v1"
+        eval_config: "config/eval_large.yaml"
+        num_tasks: 500
+        notes: "235B MoE (22B active), 8x H100 80GB"
+
+  # ============================================
+  # 实验 1: 目标模型对比 (Qwen3-32B, DeepSeek-V3.2, Qwen3-14B)
+  # ============================================
+  - name: "target_model_comparison"
+    description: "Compare target deployment models: Qwen3-32B, DeepSeek-V3.2, Qwen3-14B"
+    configs:
+      # Qwen3-32B - 推荐，平衡性能与资源
+      - id: "qwen3-32b"
+        llm_model: "Qwen/Qwen3-32B"
+        llm_api_base: "http://localhost:8000/v1"
         eval_config: "config/eval_medium.yaml"
         num_tasks: 100
         
-      - id: "llama3.1-8b"
-        llm_model: "meta-llama/llama-3.1-8b-instruct"
+      # DeepSeek-V3.2 - 最强性能
+      - id: "deepseek-v3"
+        llm_model: "deepseek-ai/DeepSeek-V3"
+        llm_api_base: "http://localhost:8000/v1"
+        eval_config: "config/eval_medium.yaml"
+        num_tasks: 100
+        
+      # Qwen3-14B - 轻量级
+      - id: "qwen3-14b"
+        llm_model: "Qwen/Qwen3-14B"
         llm_api_base: "http://localhost:8000/v1"
         eval_config: "config/eval_medium.yaml"
         num_tasks: 100
 
-      # Qwen 2.5 系列
-      - id: "qwen2.5-72b"
-        llm_model: "qwen/qwen-2.5-72b-instruct"
-        llm_api_base: "https://openrouter.ai/api/v1"
-        eval_config: "config/eval_medium.yaml"
-        num_tasks: 100
-        
-      - id: "qwen2.5-32b"
-        llm_model: "qwen/qwen-2.5-32b-instruct"
-        llm_api_base: "https://openrouter.ai/api/v1"
+  # ============================================
+  # 实验 2: 不同开源 LLM 模型对比（扩展）
+  # ============================================
+  - name: "model_comparison"
+    description: "Compare different open-source LLM models"
+    configs:
+      # Qwen3 系列
+      - id: "qwen3-32b"
+        llm_model: "Qwen/Qwen3-32B"
+        llm_api_base: "http://localhost:8000/v1"
         eval_config: "config/eval_medium.yaml"
         num_tasks: 100
 
-      # DeepSeek
-      - id: "deepseek-chat"
-        llm_model: "deepseek/deepseek-chat"
-        llm_api_base: "https://openrouter.ai/api/v1"
+      - id: "qwen3-14b"
+        llm_model: "Qwen/Qwen3-14B"
+        llm_api_base: "http://localhost:8000/v1"
+        eval_config: "config/eval_medium.yaml"
+        num_tasks: 100
+
+      # DeepSeek 系列
+      - id: "deepseek-v3"
+        llm_model: "deepseek-ai/DeepSeek-V3"
+        llm_api_base: "http://localhost:8000/v1"
+        eval_config: "config/eval_medium.yaml"
+        num_tasks: 100
+
+      - id: "deepseek-r1"
+        llm_model: "deepseek-ai/DeepSeek-R1"
+        llm_api_base: "http://localhost:8000/v1"
+        eval_config: "config/eval_medium.yaml"
+        num_tasks: 100
+
+      # Llama 3.1 系列
+      - id: "llama3.1-70b"
+        llm_model: "meta-llama/Llama-3.1-70B-Instruct"
+        llm_api_base: "http://localhost:8000/v1"
         eval_config: "config/eval_medium.yaml"
         num_tasks: 100
         
-      - id: "deepseek-r1"
-        llm_model: "deepseek/deepseek-reasoner"
-        llm_api_base: "https://openrouter.ai/api/v1"
+      - id: "llama3.1-8b"
+        llm_model: "meta-llama/Llama-3.1-8B-Instruct"
+        llm_api_base: "http://localhost:8000/v1"
         eval_config: "config/eval_medium.yaml"
         num_tasks: 100
 
       # Mixtral
       - id: "mixtral-8x22b"
-        llm_model: "mistralai/mixtral-8x22b-instruct"
-        llm_api_base: "https://openrouter.ai/api/v1"
+        llm_model: "mistralai/Mixtral-8x22B-Instruct-v0.1"
+        llm_api_base: "http://localhost:8000/v1"
         eval_config: "config/eval_medium.yaml"
         num_tasks: 100
 

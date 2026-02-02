@@ -47,33 +47,35 @@ Purple Agent 是被评测的金融分析 Agent，其 LLM 配置在 `.env` 文件
 
 ```dotenv
 # ============================================
-# 选项 1: 本地 vLLM 部署（推荐用于 GPU 服务器）
+# 推荐配置: 本地 vLLM 部署（GPU 服务器）
 # ============================================
 OPENAI_API_KEY=dummy                          # vLLM 不需要真实 API key
 OPENAI_API_BASE=http://localhost:8000/v1      # vLLM 服务地址
 OPENAI_BASE_URL=http://localhost:8000/v1      # 别名
-LLM_MODEL=meta-llama/Llama-3.1-70B-Instruct   # 模型名称
+
+# --- Qwen3-32B（推荐，平衡性能与资源）---
+LLM_MODEL=Qwen/Qwen3-32B
+
+# --- DeepSeek-V3.2（最强性能）---
+# LLM_MODEL=deepseek-ai/DeepSeek-V3
+
+# --- Qwen3-14B（轻量级）---
+# LLM_MODEL=Qwen/Qwen3-14B
 
 # ============================================
-# 选项 2: OpenRouter API（访问多种开源模型）
+# 备选: OpenRouter API（无需本地 GPU）
 # ============================================
-OPENAI_API_KEY=sk-or-v1-xxxxxxxxxxxxx
-OPENAI_API_BASE=https://openrouter.ai/api/v1
-LLM_MODEL=meta-llama/llama-3.1-70b-instruct
-# 其他可选模型:
-# LLM_MODEL=mistralai/mixtral-8x22b-instruct
-# LLM_MODEL=qwen/qwen-2.5-72b-instruct
-# LLM_MODEL=deepseek/deepseek-chat
+# OPENAI_API_KEY=sk-or-v1-xxxxxxxxxxxxx
+# OPENAI_API_BASE=https://openrouter.ai/api/v1
+# LLM_MODEL=qwen/qwen3-32b              # Qwen3-32B via OpenRouter
+# LLM_MODEL=deepseek/deepseek-chat      # DeepSeek via OpenRouter
 
 # ============================================
-# 选项 3: OpenAI API
+# 商业 API（用于基准对比）
 # ============================================
 # OPENAI_API_KEY=sk-...
 # LLM_MODEL=gpt-4o
 
-# ============================================
-# 选项 4: Anthropic API
-# ============================================
 # LLM_PROVIDER=anthropic
 # ANTHROPIC_API_KEY=sk-ant-...
 # LLM_MODEL=claude-sonnet-4-20250514
@@ -101,22 +103,146 @@ llm_eval:
 ```bash
 # 安装 vLLM
 pip install vllm
+```
 
-# 启动服务（根据 GPU 内存调整参数）
-# 单 GPU (A100 80GB 或 H100)
-vllm serve meta-llama/Llama-3.1-70B-Instruct \
+#### 推荐模型部署
+
+**⚡ B200 顶配 (单卡 192GB HBM3e) - 最强单卡**
+
+**1. Qwen3-235B-A22B (单卡 B200) - 单卡跑 235B！**
+```bash
+# 1x B200 192GB - 单卡运行 235B MoE
+vllm serve Qwen/Qwen3-235B-A22B \
     --port 8000 \
-    --tensor-parallel-size 1
+    --tensor-parallel-size 1 \
+    --max-model-len 65536 \
+    --gpu-memory-utilization 0.95 \
+    --trust-remote-code
 
-# 多 GPU (2x A100 40GB)
+# 快速部署命令
+python scripts/deploy_vllm.py --model qwen3-235b-b200
+```
+
+**2. DeepSeek-V3.2-671B (3x B200) - 全精度 671B**
+```bash
+# 3x B200 192GB - BF16 全精度运行 671B MoE
+vllm serve deepseek-ai/DeepSeek-V3 \
+    --port 8000 \
+    --tensor-parallel-size 3 \
+    --max-model-len 65536 \
+    --gpu-memory-utilization 0.95 \
+    --trust-remote-code
+
+# 快速部署命令
+python scripts/deploy_vllm.py --model deepseek-v3-b200
+```
+
+---
+
+**🚀 H100 顶配 (8x 80GB)**
+
+**1. DeepSeek-V3.2-671B (FP8 原生) - H100 最强性能**
+```bash
+# 8x H100 80GB, FP8 原生精度
+vllm serve deepseek-ai/DeepSeek-V3 \
+    --port 8000 \
+    --tensor-parallel-size 8 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.95 \
+    --trust-remote-code \
+    --dtype float8_e4m3fn \
+    --quantization fp8 \
+    --kv-cache-dtype fp8_e4m3
+```
+
+**2. Qwen3-235B-A22B (MoE) - 顶级 MoE**
+```bash
+# 8x H100 80GB, 235B 参数 (22B 激活)
+vllm serve Qwen/Qwen3-235B-A22B \
+    --port 8000 \
+    --tensor-parallel-size 8 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.95 \
+    --trust-remote-code
+```
+
+---
+
+**📌 主要目标模型**
+
+**1. Qwen3-32B（推荐，平衡性能与资源）**
+```bash
+# 单 GPU (A100 80GB / H100 80GB)
+vllm serve Qwen/Qwen3-32B \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.9
+
+# 双 GPU (2x A100 40GB / 2x RTX 4090)
+vllm serve Qwen/Qwen3-32B \
+    --port 8000 \
+    --tensor-parallel-size 2 \
+    --max-model-len 16384
+```
+
+**2. DeepSeek-V3.2（高性能，需要多 GPU）**
+```bash
+# 4x A100 80GB 或 8x A100 40GB
+vllm serve deepseek-ai/DeepSeek-V3 \
+    --port 8000 \
+    --tensor-parallel-size 4 \
+    --max-model-len 16384 \
+    --gpu-memory-utilization 0.95 \
+    --trust-remote-code
+
+# 8x GPU 配置（更大 context）
+vllm serve deepseek-ai/DeepSeek-V3 \
+    --port 8000 \
+    --tensor-parallel-size 8 \
+    --max-model-len 32768 \
+    --trust-remote-code
+```
+
+**3. Qwen3-14B（轻量级，适合单 GPU）**
+```bash
+# 单 GPU (RTX 4090 24GB / A100 40GB)
+vllm serve Qwen/Qwen3-14B \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.9
+
+# RTX 3090 24GB（减少 context 长度）
+vllm serve Qwen/Qwen3-14B \
+    --port 8000 \
+    --max-model-len 8192 \
+    --gpu-memory-utilization 0.95
+```
+
+#### GPU 内存需求参考
+
+| 模型 | 参数量 | 最低 GPU | 推荐配置 | Context 长度 |
+|------|--------|----------|----------|-------------|
+| Qwen3-14B | 14B | 1x RTX 4090 (24GB) | 1x A100 40GB | 32K |
+| Qwen3-32B | 32B | 2x RTX 4090 | 1x A100 80GB | 32K |
+| DeepSeek-V3.2 | 671B MoE | 4x A100 80GB | 8x H100 80GB | 32K |
+| Qwen3-235B-A22B | 235B MoE (22B激活) | 8x H100 80GB | 8x H100 80GB | 32K |
+| DeepSeek-V3 FP8 | 671B MoE | 8x H100 80GB | 8x H100 80GB | 32K |
+| **⚡ Qwen3-235B (B200)** | **235B MoE** | **1x B200 192GB** | **1x B200** | **65K** |
+| **⚡ DeepSeek-V3 (B200)** | **671B MoE** | **3x B200 192GB** | **3x B200** | **65K** |
+
+#### 其他模型（备选）
+```bash
+# Llama 3.1 70B
 vllm serve meta-llama/Llama-3.1-70B-Instruct \
     --port 8000 \
     --tensor-parallel-size 2
 
-# 较小模型（适合单张消费级 GPU）
-vllm serve meta-llama/Llama-3.1-8B-Instruct \
+# Mixtral 8x22B
+vllm serve mistralai/Mixtral-8x22B-Instruct-v0.1 \
     --port 8000 \
-    --max-model-len 8192
+    --tensor-parallel-size 2
 ```
 
 ---
