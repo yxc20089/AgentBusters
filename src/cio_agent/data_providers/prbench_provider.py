@@ -170,7 +170,11 @@ class PRBenchProvider(DatasetProvider):
         try:
             from datasets import load_dataset
 
-            dataset = load_dataset(self.HF_DATASET_ID, trust_remote_code=True)
+            try:
+                dataset = load_dataset(self.HF_DATASET_ID)
+            except TypeError:
+                # Fallback for older datasets versions that may require trust_remote_code
+                dataset = load_dataset(self.HF_DATASET_ID, trust_remote_code=True)
 
             result = {}
             for split in self.splits:

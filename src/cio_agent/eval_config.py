@@ -655,11 +655,18 @@ class ConfigurableDatasetLoader:
 
         # Load dataset from HuggingFace
         logger.info(f"Loading GDPVal dataset from {config.hf_dataset}")
-        dataset = load_dataset(
-            config.hf_dataset,
-            cache_dir=config.cache_dir,
-            trust_remote_code=True,
-        )
+        try:
+            dataset = load_dataset(
+                config.hf_dataset,
+                cache_dir=config.cache_dir,
+            )
+        except TypeError:
+            # Fallback for older datasets versions that may require trust_remote_code
+            dataset = load_dataset(
+                config.hf_dataset,
+                cache_dir=config.cache_dir,
+                trust_remote_code=True,
+            )
 
         # GDPVal has a single 'train' split with 220 tasks
         data = dataset["train"]
