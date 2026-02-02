@@ -48,22 +48,20 @@ class TestGreenAgentDatasetConfig:
         assert agent._examples is not None
         assert len(agent._examples) == 3
 
-    def test_public_csv_mode_initialization(self):
-        """Test public_csv mode initializes provider and evaluator."""
+    def test_prbench_mode_initialization(self):
+        """Test prbench mode initializes provider and evaluator."""
         from cio_agent.green_agent import GreenAgent
-        from cio_agent.local_datasets import CsvFinanceDatasetProvider
-        from evaluators import PublicCsvEvaluator
-        
+        from cio_agent.data_providers.prbench_provider import PRBenchProvider
+        from evaluators import PRBenchEvaluator
+
         agent = GreenAgent(
-            dataset_type="public_csv",
-            dataset_path="finance-agent/data/public.csv",
+            dataset_type="prbench",
             limit=3,
         )
-        
-        assert agent.dataset_type == "public_csv"
-        assert agent.dataset_path == "finance-agent/data/public.csv"
-        assert isinstance(agent.dataset_provider, CsvFinanceDatasetProvider)
-        assert isinstance(agent.dataset_evaluator, PublicCsvEvaluator)
+
+        assert agent.dataset_type == "prbench"
+        assert isinstance(agent.dataset_provider, PRBenchProvider)
+        assert isinstance(agent.dataset_evaluator, PRBenchEvaluator)
         assert agent._examples is not None
         assert len(agent._examples) == 3
 
@@ -119,18 +117,16 @@ class TestGreenAgentExecutorConfig:
         assert executor.limit is None
         assert executor.synthetic_questions is None
 
-    def test_executor_public_csv_config(self):
-        """Test executor with public_csv configuration."""
+    def test_executor_prbench_config(self):
+        """Test executor with prbench configuration."""
         from cio_agent.green_executor import GreenAgentExecutor
-        
+
         executor = GreenAgentExecutor(
-            dataset_type="public_csv",
-            dataset_path="finance-agent/data/public.csv",
+            dataset_type="prbench",
             limit=10,
         )
-        
-        assert executor.dataset_type == "public_csv"
-        assert executor.dataset_path == "finance-agent/data/public.csv"
+
+        assert executor.dataset_type == "prbench"
         assert executor.limit == 10
 
 
@@ -206,23 +202,22 @@ class TestDatasetEvaluatorIntegration:
         assert result.score == 1.0
         assert result.is_correct
 
-    def test_public_csv_evaluator_with_agent(self):
-        """Test public.csv evaluator integration with GreenAgent."""
+    def test_prbench_evaluator_with_agent(self):
+        """Test prbench evaluator integration with GreenAgent."""
         from cio_agent.green_agent import GreenAgent
-        
+
         agent = GreenAgent(
-            dataset_type="public_csv",
-            dataset_path="finance-agent/data/public.csv",
+            dataset_type="prbench",
             limit=1,
         )
-        
+
         example = agent._examples[0]
         result = agent.dataset_evaluator.evaluate(
-            predicted=example.answer,
-            expected=example.answer,
+            predicted=example.answer if hasattr(example, 'answer') else str(example),
+            expected=example.answer if hasattr(example, 'answer') else str(example),
             rubric=None,
         )
-        
+
         assert result.score >= 0.0
 
 
@@ -249,9 +244,9 @@ class TestDatasetTypeValidation:
     def test_all_supported_dataset_types(self):
         """Test all supported dataset types are handled."""
         from cio_agent.green_agent import GreenAgent
-        
-        supported_types = ["synthetic", "bizfinbench", "public_csv"]
-        
+
+        supported_types = ["synthetic", "bizfinbench", "prbench"]
+
         for dtype in supported_types:
             agent = GreenAgent(dataset_type=dtype)
             assert agent.dataset_type == dtype
@@ -285,27 +280,26 @@ class TestEvaluationResultFormat:
         assert hasattr(result, 'feedback')
         assert hasattr(result, 'details')
 
-    def test_public_csv_result_has_required_fields(self):
-        """Test public.csv evaluation result contains required fields."""
+    def test_prbench_result_has_required_fields(self):
+        """Test prbench evaluation result contains required fields."""
         from cio_agent.green_agent import GreenAgent
         from evaluators import EvalResult
-        
+
         agent = GreenAgent(
-            dataset_type="public_csv",
-            dataset_path="finance-agent/data/public.csv",
+            dataset_type="prbench",
             limit=1,
         )
-        
-        rubric = [{"operator": "correctness", "criteria": "test"}]
+
         result = agent.dataset_evaluator.evaluate(
             predicted="test is here",
-            rubric=rubric,
+            expected="test is here",
+            rubric=None,
         )
-        
+
         assert isinstance(result, EvalResult)
         assert hasattr(result, 'score')
-        assert hasattr(result, 'correct_count')
-        assert hasattr(result, 'total_count')
+        assert hasattr(result, 'feedback')
+        assert hasattr(result, 'details')
 
 
 class TestBatchEvaluation:
@@ -337,22 +331,21 @@ class TestBatchEvaluation:
         assert len(results) == 5
         assert all(r.score == 1.0 for r in results)
 
-    def test_public_csv_batch_with_limit(self):
-        """Test public.csv loads correct number of examples with limit."""
+    def test_prbench_batch_with_limit(self):
+        """Test prbench loads correct number of examples with limit."""
         from cio_agent.green_agent import GreenAgent
-        
+
         agent = GreenAgent(
-            dataset_type="public_csv",
-            dataset_path="finance-agent/data/public.csv",
+            dataset_type="prbench",
             limit=5,
         )
-        
+
         assert len(agent._examples) == 5
-        
+
         for example in agent._examples:
             assert hasattr(example, 'question')
-            assert hasattr(example, 'answer')
-            assert hasattr(example, 'category')
+            # PRBench examples have metadata with domain info
+            assert hasattr(example, 'metadata')
 
 
 class TestConvertSyntheticToTasks:

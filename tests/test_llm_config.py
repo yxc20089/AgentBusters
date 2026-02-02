@@ -65,7 +65,7 @@ class TestEvaluatorLLMConfig:
         assert config.gdpval.model == "gpt-4o"
         assert config.bizfinbench.model == "gpt-4o-mini"
         assert config.debate.model == "gpt-4o"
-        assert config.public_csv.model == "gpt-4o-mini"
+        assert config.prbench.model == "gpt-4o-mini"
 
     def test_all_temperatures_are_zero(self):
         """Ensure all temperatures are 0 for reproducibility."""
@@ -75,7 +75,7 @@ class TestEvaluatorLLMConfig:
         assert config.gdpval.temperature == 0.0
         assert config.bizfinbench.temperature == 0.0
         assert config.debate.temperature == 0.0
-        assert config.public_csv.temperature == 0.0
+        assert config.prbench.temperature == 0.0
         assert config.default.temperature == 0.0
 
     def test_get_config_known_evaluator(self):
@@ -293,15 +293,15 @@ class TestEvaluatorIntegration:
         assert evaluator.llm_temperature == get_temperature_for_evaluator("bizfinbench")
         assert evaluator._llm_max_tokens == get_max_tokens_for_evaluator("bizfinbench")
 
-    def test_public_csv_evaluator_uses_config(self):
-        """Verify PublicCsvEvaluator picks up per-evaluator config."""
-        from evaluators.public_csv_evaluator import PublicCsvEvaluator
+    def test_prbench_evaluator_uses_config(self):
+        """Verify PRBenchEvaluator picks up per-evaluator config."""
+        from evaluators.prbench_evaluator import PRBenchEvaluator
 
-        evaluator = PublicCsvEvaluator(use_llm=False)
+        evaluator = PRBenchEvaluator(use_llm=False)
 
-        assert evaluator.llm_model == get_model_for_evaluator("public_csv")
-        assert evaluator.llm_temperature == get_temperature_for_evaluator("public_csv")
-        assert evaluator._llm_max_tokens == get_max_tokens_for_evaluator("public_csv")
+        assert evaluator.llm_model == get_model_for_evaluator("prbench")
+        assert evaluator.llm_temperature == get_temperature_for_evaluator("prbench")
+        assert evaluator._llm_max_tokens == get_max_tokens_for_evaluator("prbench")
 
     def test_evaluator_respects_env_override(self):
         """Verify evaluators respect environment variable overrides."""

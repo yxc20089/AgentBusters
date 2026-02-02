@@ -46,12 +46,12 @@ class TestEvaluationConfig:
     def test_config_from_yaml(self):
         """Test loading config from YAML file."""
         from cio_agent.eval_config import EvaluationConfig
-        
+
         yaml_content = """
 name: YAML Test Config
 datasets:
-  - type: public_csv
-    path: finance-agent/data/public.csv
+  - type: prbench
+    splits: [finance]
     limit: 5
 sampling:
   strategy: sequential
@@ -60,12 +60,12 @@ sampling:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             f.write(yaml_content)
             f.flush()
-            
+
             config = EvaluationConfig.from_yaml(f.name)
-            
+
         assert config.name == "YAML Test Config"
         assert len(config.datasets) == 1
-        assert config.datasets[0].type == "public_csv"
+        assert config.datasets[0].type == "prbench"
         assert config.sampling.strategy == "sequential"
 
     def test_bizfinbench_all_task_types_expansion(self):
@@ -123,36 +123,36 @@ class TestConfigurableDatasetLoader:
         assert all(ex.dataset_type == "bizfinbench" for ex in examples)
         assert all(ex.task_type == "event_logic_reasoning" for ex in examples)
 
-    def test_load_public_csv_examples(self):
-        """Test loading examples from public.csv."""
+    def test_load_prbench_examples(self):
+        """Test loading examples from PRBench."""
         from cio_agent.eval_config import (
-            EvaluationConfig, PublicCsvDatasetConfig,
+            EvaluationConfig, PRBenchDatasetConfig,
             SamplingConfig, ConfigurableDatasetLoader
         )
-        
+
         config = EvaluationConfig(
             datasets=[
-                PublicCsvDatasetConfig(
-                    path="finance-agent/data/public.csv",
+                PRBenchDatasetConfig(
+                    splits=["finance"],
                     limit=5,
                 )
             ],
             sampling=SamplingConfig(strategy="sequential", total_limit=5),
         )
-        
+
         loader = ConfigurableDatasetLoader(config)
         examples = loader.load()
-        
+
         assert len(examples) == 5
-        assert all(ex.dataset_type == "public_csv" for ex in examples)
+        assert all(ex.dataset_type == "prbench" for ex in examples)
 
     def test_load_multiple_datasets(self):
         """Test loading from multiple datasets."""
         from cio_agent.eval_config import (
-            EvaluationConfig, BizFinBenchDatasetConfig, PublicCsvDatasetConfig,
+            EvaluationConfig, BizFinBenchDatasetConfig, PRBenchDatasetConfig,
             SamplingConfig, ConfigurableDatasetLoader
         )
-        
+
         config = EvaluationConfig(
             datasets=[
                 BizFinBenchDatasetConfig(
@@ -161,20 +161,20 @@ class TestConfigurableDatasetLoader:
                     languages=["en"],
                     limit_per_task=2,
                 ),
-                PublicCsvDatasetConfig(
-                    path="finance-agent/data/public.csv",
+                PRBenchDatasetConfig(
+                    splits=["finance"],
                     limit=3,
                 ),
             ],
             sampling=SamplingConfig(strategy="sequential", total_limit=5),
         )
-        
+
         loader = ConfigurableDatasetLoader(config)
         examples = loader.load()
-        
+
         assert len(examples) == 5
         assert sum(1 for ex in examples if ex.dataset_type == "bizfinbench") >= 1
-        assert sum(1 for ex in examples if ex.dataset_type == "public_csv") >= 1
+        assert sum(1 for ex in examples if ex.dataset_type == "prbench") >= 1
 
 
 class TestSamplingStrategies:
@@ -252,10 +252,10 @@ class TestSamplingStrategies:
     def test_stratified_sampling(self):
         """Test stratified (equal per dataset) sampling."""
         from cio_agent.eval_config import (
-            EvaluationConfig, BizFinBenchDatasetConfig, PublicCsvDatasetConfig,
+            EvaluationConfig, BizFinBenchDatasetConfig, SyntheticDatasetConfig,
             SamplingConfig, ConfigurableDatasetLoader
         )
-        
+
         config = EvaluationConfig(
             datasets=[
                 BizFinBenchDatasetConfig(
@@ -264,23 +264,23 @@ class TestSamplingStrategies:
                     languages=["en"],
                     limit_per_task=10,
                 ),
-                PublicCsvDatasetConfig(
-                    path="finance-agent/data/public.csv",
+                SyntheticDatasetConfig(
+                    path="data/synthetic_questions/questions.json",
                     limit=10,
                 ),
             ],
             sampling=SamplingConfig(strategy="stratified", total_limit=10, seed=42),
         )
-        
+
         loader = ConfigurableDatasetLoader(config)
         examples = loader.load()
-        
+
         # Should have balanced representation
         bizfin_count = sum(1 for ex in examples if ex.dataset_type == "bizfinbench")
-        public_count = sum(1 for ex in examples if ex.dataset_type == "public_csv")
-        
+        synthetic_count = sum(1 for ex in examples if ex.dataset_type == "synthetic")
+
         # With stratified, should be roughly equal
-        assert abs(bizfin_count - public_count) <= 2
+        assert abs(bizfin_count - synthetic_count) <= 2
 
 
 class TestDatasetLoaderSummary:
@@ -289,10 +289,10 @@ class TestDatasetLoaderSummary:
     def test_summary_statistics(self):
         """Test summary returns correct statistics."""
         from cio_agent.eval_config import (
-            EvaluationConfig, BizFinBenchDatasetConfig, PublicCsvDatasetConfig,
+            EvaluationConfig, BizFinBenchDatasetConfig, PRBenchDatasetConfig,
             SamplingConfig, ConfigurableDatasetLoader
         )
-        
+
         config = EvaluationConfig(
             datasets=[
                 BizFinBenchDatasetConfig(
@@ -301,23 +301,23 @@ class TestDatasetLoaderSummary:
                     languages=["en"],
                     limit_per_task=3,
                 ),
-                PublicCsvDatasetConfig(
-                    path="finance-agent/data/public.csv",
+                PRBenchDatasetConfig(
+                    splits=["finance"],
                     limit=2,
                 ),
             ],
             sampling=SamplingConfig(strategy="sequential", total_limit=5),
         )
-        
+
         loader = ConfigurableDatasetLoader(config)
         loader.load()
         summary = loader.summary()
-        
+
         assert "total" in summary
         assert "by_dataset" in summary
         assert summary["total"] == 5
         assert "bizfinbench" in summary["by_dataset"]
-        assert "public_csv" in summary["by_dataset"]
+        assert "prbench" in summary["by_dataset"]
 
 
 class TestGreenAgentWithConfig:
@@ -327,10 +327,10 @@ class TestGreenAgentWithConfig:
         """Test GreenAgent initialization with config."""
         from cio_agent.green_agent import GreenAgent
         from cio_agent.eval_config import (
-            EvaluationConfig, BizFinBenchDatasetConfig, PublicCsvDatasetConfig,
+            EvaluationConfig, BizFinBenchDatasetConfig, PRBenchDatasetConfig,
             SamplingConfig
         )
-        
+
         config = EvaluationConfig(
             name="Test Evaluation",
             datasets=[
@@ -340,22 +340,22 @@ class TestGreenAgentWithConfig:
                     languages=["en"],
                     limit_per_task=2,
                 ),
-                PublicCsvDatasetConfig(
-                    path="finance-agent/data/public.csv",
+                PRBenchDatasetConfig(
+                    splits=["finance"],
                     limit=3,
                 ),
             ],
             sampling=SamplingConfig(strategy="random", total_limit=5, seed=42),
         )
-        
+
         agent = GreenAgent(eval_config=config)
-        
+
         assert agent.eval_config is not None
         assert agent.dataset_loader is not None
         assert agent._loaded_examples is not None
         assert len(agent._loaded_examples) == 5
         assert "bizfinbench" in agent._evaluators
-        assert "public_csv" in agent._evaluators
+        assert "prbench" in agent._evaluators
 
     def test_green_agent_with_config_path(self):
         """Test GreenAgent with config file path."""
@@ -416,32 +416,32 @@ class TestSyntheticDatasetSupport:
     def test_synthetic_in_multi_dataset_config(self):
         """Test synthetic dataset alongside other datasets."""
         from cio_agent.eval_config import (
-            EvaluationConfig, SyntheticDatasetConfig, PublicCsvDatasetConfig,
+            EvaluationConfig, SyntheticDatasetConfig, PRBenchDatasetConfig,
             SamplingConfig, ConfigurableDatasetLoader
         )
-        
+
         config = EvaluationConfig(
             datasets=[
                 SyntheticDatasetConfig(
                     path="data/synthetic_questions/questions.json",
                     limit=2,
                 ),
-                PublicCsvDatasetConfig(
-                    path="finance-agent/data/public.csv",
+                PRBenchDatasetConfig(
+                    splits=["finance"],
                     limit=3,
                 ),
             ],
             sampling=SamplingConfig(strategy="sequential", total_limit=5),
         )
-        
+
         loader = ConfigurableDatasetLoader(config)
         examples = loader.load()
-        
+
         synthetic_count = sum(1 for ex in examples if ex.dataset_type == "synthetic")
-        public_count = sum(1 for ex in examples if ex.dataset_type == "public_csv")
-        
+        prbench_count = sum(1 for ex in examples if ex.dataset_type == "prbench")
+
         assert synthetic_count >= 1
-        assert public_count >= 1
+        assert prbench_count >= 1
         assert len(examples) == 5
 
     def test_green_agent_with_synthetic(self):
