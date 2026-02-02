@@ -114,13 +114,18 @@ jobs:
       - name: Run evaluation
         id: eval
         run: |
+          # Run evaluation from host, using Docker network names for inter-container communication
           python scripts/run_a2a_eval.py \
             --green-url http://localhost:9109 \
-            --purple-url http://localhost:9110 \
+            --purple-url http://purple-agent:9110 \
             --num-tasks ${{ github.event.inputs.num_tasks }} \
             --timeout 1800 \
             --output results/full_eval_output.json \
             -v
+
+          # Also copy results from green agent container
+          mkdir -p results
+          docker cp green-agent:/home/agent/results/. results/ 2>/dev/null || echo "Container results copied"
 
       - name: Show container logs
         if: always()
