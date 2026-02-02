@@ -179,6 +179,9 @@ vllm serve Qwen/Qwen3-32B \
     --max-model-len 32768 \
     --gpu-memory-utilization 0.9
 
+2 x A6000
+CUDA_VISIBLE_DEVICES=2,3 vllm serve Qwen/Qwen3-32B --port 8100 --tensor-parallel-size 2 --max-model-len 16384
+
 # 双 GPU (2x A100 40GB / 2x RTX 4090)
 vllm serve Qwen/Qwen3-32B \
     --port 8000 \
@@ -502,6 +505,13 @@ python src/cio_agent/a2a_server.py \
     --host 0.0.0.0 \
     --port 9109 \
     --eval-config config/eval_medium.yaml \
+    --store-predicted \
+    --predicted-max-chars 200
+
+python src/cio_agent/a2a_server.py \
+    --host 0.0.0.0 \
+    --port 9109 \
+    --eval-config config/eval_quick_test.yaml \
     --store-predicted \
     --predicted-max-chars 200
 
