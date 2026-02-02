@@ -918,7 +918,8 @@ class ConfigurableDatasetLoader:
         """Sample equal number from each dataset type."""
         by_type: Dict[str, List[LoadedExample]] = {}
         for ex in examples:
-            key = f"{ex.dataset_type}_{ex.task_type or 'default'}"
+            # Group by dataset_type only to ensure equal representation across datasets
+            key = ex.dataset_type
             if key not in by_type:
                 by_type[key] = []
             by_type[key].append(ex)
