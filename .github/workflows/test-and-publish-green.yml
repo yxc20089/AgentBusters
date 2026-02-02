@@ -48,8 +48,28 @@ jobs:
         run: |
           echo "$SECRETS_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
           docker run -d -p 9009:9009 --name agent-container --env-file .env $(echo "${{ steps.meta.outputs.tags }}" | head -n1) --host 0.0.0.0 --port 9009
-          # Wait for container to be healthy (120s timeout for Python app startup)
-          timeout 120 bash -c 'until curl -sf http://localhost:9009/.well-known/agent.json > /dev/null; do sleep 2; done'
+          
+          # Wait for container to be healthy with progress logging
+          echo "Waiting for container to start..."
+          for i in {1..60}; do
+            if curl -sf http://localhost:9009/.well-known/agent.json > /dev/null 2>&1; then
+              echo "✅ Container is healthy after ${i}s"
+              exit 0
+            fi
+            # Check if container is still running
+            if ! docker ps --filter "name=agent-container" --filter "status=running" -q | grep -q .; then
+              echo "❌ Container exited unexpectedly!"
+              echo "=== Container Logs ==="
+              docker logs agent-container
+              exit 1
+            fi
+            echo "  Waiting... (${i}/60)"
+            sleep 2
+          done
+          echo "❌ Timeout waiting for container"
+          echo "=== Container Logs ==="
+          docker logs agent-container
+          exit 1
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
