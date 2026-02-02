@@ -5,10 +5,7 @@ from cio_agent.data_providers.base_jsonl_provider import BaseJSONLProvider
 from cio_agent.data_providers.bizfinbench_provider import BizFinBenchProvider
 from cio_agent.data_providers.csv_provider import CsvFinanceDatasetProvider
 from cio_agent.data_providers.options_provider import OptionsDatasetProvider
-<<<<<<< HEAD
-=======
 from cio_agent.data_providers.prbench_provider import PRBenchProvider
->>>>>>> a5270c72482ea9cdde47c5ea4454667043581c56
 
 __all__ = [
     "DatasetExample",
@@ -17,8 +14,5 @@ __all__ = [
     "BizFinBenchProvider",
     "CsvFinanceDatasetProvider",
     "OptionsDatasetProvider",
-<<<<<<< HEAD
-=======
     "PRBenchProvider",
->>>>>>> a5270c72482ea9cdde47c5ea4454667043581c56
 ]

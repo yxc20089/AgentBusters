@@ -508,6 +508,13 @@ python src/cio_agent/a2a_server.py \
     --store-predicted \
     --predicted-max-chars 200
 
+python src/cio_agent/a2a_server.py \
+    --host 0.0.0.0 \
+    --port 9109 \
+    --eval-config config/eval_quick_test.yaml \
+    --store-predicted \
+    --predicted-max-chars 200
+
 # 终端 2: 启动 Purple Agent (被评测的 Agent)
 purple-agent serve --host 0.0.0.0 --port 9110 --card-url http://127.0.0.1:9110
 

@@ -34,8 +34,8 @@ sampling:
 
 llm_eval:
   enabled: true
-  model: gpt-4o-mini
+  model: Qwen/Qwen3-32B
   temperature: 0.0
 
 debate: false
-timeout_seconds: 60
+timeout_seconds: 21600
