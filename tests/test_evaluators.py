@@ -5,7 +5,7 @@ Unit tests for dataset-specific evaluators.
 import pytest
 from evaluators.base import EvalResult
 from evaluators.bizfinbench_evaluator import BizFinBenchEvaluator
-from evaluators.public_csv_evaluator import PublicCsvEvaluator
+from evaluators.prbench_evaluator import PRBenchEvaluator
 
 
 class TestEvalResult:
@@ -88,49 +88,50 @@ class TestBizFinBenchEvaluator:
         assert result.score == 0.0
 
 
-class TestPublicCsvEvaluator:
-    """Test PublicCsvEvaluator."""
+class TestPRBenchEvaluator:
+    """Test PRBenchEvaluator."""
 
     @pytest.fixture
     def evaluator(self):
-        return PublicCsvEvaluator()
+        return PRBenchEvaluator(use_llm=False)
 
-    def test_all_correctness_met(self, evaluator):
-        rubric = [
-            {"operator": "correctness", "criteria": "Q3 2024"},
-            {"operator": "correctness", "criteria": "revenue growth"},
-        ]
-        result = evaluator.evaluate("In Q3 2024, revenue growth was 15%", rubric=rubric)
+    def test_scratchpad_exact_match(self, evaluator):
+        """Test fallback to scratchpad comparison when no rubric."""
+        result = evaluator.evaluate(
+            "The answer is Q3 2024 revenue",
+            "The answer is Q3 2024 revenue",
+            rubric=None
+        )
         assert result.score == 1.0
 
-    def test_partial_correctness(self, evaluator):
-        rubric = [
-            {"operator": "correctness", "criteria": "Q3 2024"},
-            {"operator": "correctness", "criteria": "revenue growth"},
-        ]
-        result = evaluator.evaluate("Q3 2024 results", rubric=rubric)
-        # Should get partial credit (1 out of 2)
-        assert 0 < result.score < 1.0
+    def test_scratchpad_partial_match(self, evaluator):
+        """Test partial scratchpad match."""
+        result = evaluator.evaluate(
+            "Revenue was strong",
+            "Revenue was strong in Q3",
+            rubric=None
+        )
+        # Partial match gives partial credit
+        assert 0 < result.score <= 1.0
 
-    def test_no_correctness_met(self, evaluator):
-        rubric = [
-            {"operator": "correctness", "criteria": "Q3 2024"},
-            {"operator": "correctness", "criteria": "revenue growth"},
-        ]
-        result = evaluator.evaluate("Something unrelated", rubric=rubric)
-        assert result.score == 0.0
+    def test_scratchpad_no_match(self, evaluator):
+        """Test no scratchpad match."""
+        result = evaluator.evaluate(
+            "Something completely different",
+            "Expected answer about revenue",
+            rubric=None
+        )
+        assert result.score < 1.0
 
     def test_empty_rubric(self, evaluator):
         result = evaluator.evaluate("Some answer", "Expected", rubric=None)
         # Falls back to simple comparison
         assert result.score >= 0.0
 
-    def test_numerical_criteria(self, evaluator):
-        rubric = [
-            {"operator": "correctness", "criteria": "$3.25 Billion"},
-        ]
-        result = evaluator.evaluate("The cost was $3.25 Billion", rubric=rubric)
-        assert result.score == 1.0
+    def test_empty_prediction(self, evaluator):
+        """Test empty prediction returns zero score."""
+        result = evaluator.evaluate("", "Expected answer", rubric=None)
+        assert result.score == 0.0
 
 
 class TestBizFinBenchEvaluatorBatch:
@@ -190,26 +191,33 @@ class TestBizFinBenchEvaluatorEdgeCases:
         assert result.score == 0.0
 
 
-class TestPublicCsvEvaluatorKeyElements:
-    """Test _extract_key_elements method."""
+class TestPRBenchEvaluatorEdgeCases:
+    """Test PRBench edge cases."""
 
     @pytest.fixture
     def evaluator(self):
-        return PublicCsvEvaluator()
+        return PRBenchEvaluator(use_llm=False)
 
-    def test_extract_numbers(self, evaluator):
-        elements = evaluator._extract_key_elements("Revenue was $3.25 billion in Q4")
-        assert "$3.25 billion" in elements or "3.25" in [e for e in elements if "3.25" in e]
+    def test_case_insensitive_match(self, evaluator):
+        """Test that matching is case insensitive."""
+        result = evaluator.evaluate(
+            "REVENUE GROWTH WAS STRONG",
+            "Revenue growth was strong",
+            rubric=None
+        )
+        assert result.score > 0.5
 
-    def test_extract_names(self, evaluator):
-        elements = evaluator._extract_key_elements("John Smith is the CEO")
-        assert "john smith" in elements or any("john" in e for e in elements)
+    def test_whitespace_handling(self, evaluator):
+        """Test handling of whitespace variations."""
+        result = evaluator.evaluate(
+            "  The   answer  is  here  ",
+            "The answer is here",
+            rubric=None
+        )
+        assert result.score > 0.0
 
-    def test_extract_tickers(self, evaluator):
-        elements = evaluator._extract_key_elements("AAPL and MSFT are tech stocks")
-        assert "aapl" in elements or "msft" in elements
-
-    def test_empty_text(self, evaluator):
-        elements = evaluator._extract_key_elements("")
-        assert elements == []
+    def test_empty_expected(self, evaluator):
+        """Test empty expected value."""
+        result = evaluator.evaluate("Some answer", "", rubric=None)
+        assert result.score >= 0.0
 
