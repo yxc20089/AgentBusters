@@ -7,6 +7,7 @@ WORKDIR /home/agent
 
 # Copy project files
 COPY --chown=agent:agent pyproject.toml ./
+COPY --chown=agent:agent uv.lock ./
 COPY --chown=agent:agent README.md ./
 COPY --chown=agent:agent src src
 
