@@ -19,14 +19,25 @@
 
 ```bash
 # 克隆仓库
-cd d:\code\finbenchmark\AgentBusters
+cd /path/to/your/workspace/AgentBusters
 
 # 创建虚拟环境
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1  # Windows PowerShell
+python -m venv venv
+
+# 激活虚拟环境
+# Linux/macOS
+source venv/bin/activate
+
+# Windows PowerShell
+# .\.venv\Scripts\Activate.ps1
+
+# Windows CMD
+# .\.venv\Scripts\activate.bat
 
 # 安装依赖
 pip install -e ".[dev]"
+
+pip install vllm --extra-index-url https://download.pytorch.org/whl/cu128
 ```
 
 ### 2. 配置文件设置
@@ -101,11 +112,128 @@ llm_eval:
 ### 启动本地 vLLM 服务（GPU 服务器）
 
 ```bash
-# 安装 vLLM
+# 重要：版本兼容性说明
+# vLLM 0.15.0 会自动安装 PyTorch 2.9.x，这是推荐版本
+# ⚠️ 注意：不同 CUDA 索引会安装不同 PyTorch 版本 (cu126→2.10, cu124→2.4)
+# 推荐方法：让 vLLM 自动处理 PyTorch 版本管理
+
+# 方法 1：让 vLLM 自动处理 PyTorch (推荐)
 pip install vllm
+# vLLM 会自动安装兼容的 PyTorch 2.9.x + CUDA 支持
+
+# 方法 2：手动指定版本 (如果需要完全控制)
+pip install torch==2.9.1 torchvision torchaudio  # 不使用索引 URL
+pip install vllm
+
+# 1. 检查当前 PyTorch 是否支持 CUDA
+python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}')"
+
+# 如果显示 CUDA available: False 或版本包含 '+cpu'，需要重新安装
+# 卸载 CPU 版本的 PyTorch
+pip uninstall torch torchvision torchaudio -y
+
+# 重新安装 vLLM (会自动安装正确的 PyTorch 版本)
+pip install vllm --no-cache-dir
+
+# 修复 NumPy 兼容性问题 (如果出现 NumPy 2.x 警告)
+pip install "numpy<2.0"
+
+# 验证安装
+python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'GPU count: {torch.cuda.device_count()}')"
+python -c "import vllm; print('vLLM installed successfully')"
 ```
 
 #### 推荐模型部署
+
+**🚀 GH200 超级计算 (单卡 480GB HBM3e) - 终极单卡**
+
+**1. DeepSeek-V3.2-671B (单卡 GH200-480GB) - 单卡跑 671B 全参数！**
+```bash
+# 1x GH200 480GB - 单卡运行 671B MoE 全精度
+vllm serve deepseek-ai/DeepSeek-V3 \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --max-model-len 131072 \
+    --gpu-memory-utilization 0.90 \
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser deepseek_v3
+
+# 快速部署命令
+python scripts/deploy_vllm.py --model deepseek-v3-gh200
+```
+
+**2. Qwen3-235B-A22B (单卡 GH200-480GB) - 超大 Context**
+```bash
+# 1x GH200 480GB - 单卡运行 235B MoE
+vllm serve Qwen/Qwen3-235B-A22B \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --max-model-len 40960 \
+    --gpu-memory-utilization 0.90 \
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml
+
+# 注意: Qwen3-235B-A22B 的原生上下文长度为 40,960 tokens
+# GH200-480GB 有足够内存，但模型架构限制了上下文长度
+
+# ⚠️ 单卡 H100 80GB 无法运行此模型！需要至少 3 张 H100 80GB
+# 8x H100 80GB 配置 (推荐)
+vllm serve Qwen/Qwen3-235B-A22B \
+    --port 8000 \
+    --tensor-parallel-size 8 \
+    --max-model-len 40960 \
+    --gpu-memory-utilization 0.90 \
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml
+
+# 3x H100 80GB 配置 (最小配置)
+vllm serve Qwen/Qwen3-235B-A22B \
+    --port 8000 \
+    --tensor-parallel-size 3 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.90 \
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml
+
+# 快速部署命令
+python scripts/deploy_vllm.py --model qwen3-235b-gh200
+```
+
+---
+
+**🔋 GH200 标准版 (单卡 96GB HBM3e) - 高效单卡**
+
+**⚠️ 重要提示: Qwen3-235B-A22B 实际需要超过 96GB 内存，无法在 GH200-96GB 上运行** 
+
+**推荐替代方案:**
+```bash
+# 1. Qwen3-32B (最佳选择) - 单卡运行，性能优秀
+vllm serve Qwen/Qwen3-32B \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.90 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml
+
+# 2. DeepSeek-V3 量化版本 (实验性)
+# 注意: 即使量化也可能超出 96GB 限制
+vllm serve deepseek-ai/DeepSeek-V3 \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --max-model-len 16384 \
+    --gpu-memory-utilization 0.85 \
+    --quantization gptq \
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser deepseek_v3
+```
+
+---
 
 **⚡ B200 顶配 (单卡 192GB HBM3e) - 最强单卡**
 
@@ -115,9 +243,11 @@ pip install vllm
 vllm serve Qwen/Qwen3-235B-A22B \
     --port 8000 \
     --tensor-parallel-size 1 \
-    --max-model-len 65536 \
+    --max-model-len 40960 \
     --gpu-memory-utilization 0.95 \
-    --trust-remote-code
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml
 
 # 快速部署命令
 python scripts/deploy_vllm.py --model qwen3-235b-b200
@@ -131,7 +261,9 @@ vllm serve deepseek-ai/DeepSeek-V3 \
     --tensor-parallel-size 3 \
     --max-model-len 65536 \
     --gpu-memory-utilization 0.95 \
-    --trust-remote-code
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser deepseek_v3
 
 # 快速部署命令
 python scripts/deploy_vllm.py --model deepseek-v3-b200
@@ -139,20 +271,140 @@ python scripts/deploy_vllm.py --model deepseek-v3-b200
 
 ---
 
-**🚀 H100 顶配 (8x 80GB)**
+**🚀 H100 顶配 (8x 80GB) - ⚠️ DeepSeek-V3 需要 Hopper GPU**
 
-**1. DeepSeek-V3.2-671B (FP8 原生) - H100 最强性能**
+> **⚠️ 重要硬件要求**: DeepSeek-V3 使用 MLA (Multi-head Latent Attention) 架构，**必须使用 Hopper 架构 GPU (H100/H200)**。
+> A100 (compute capability 8.0) **无法运行** DeepSeek-V3，即使有 8 张卡也不行！
+> 
+> 如果您使用 A100，请使用 Qwen3-32B、Llama-3.1-70B 或 Mixtral-8x22B 等替代模型。
+
+**1. DeepSeek-V3.2-671B (FP8 量化) - 仅限 H100/H200**
 ```bash
-# 8x H100 80GB, FP8 原生精度
+# 8x H100 80GB, FP8 量化 - 推荐配置 (16K context，稳定运行)
+# ⚠️ 此命令仅适用于 H100/H200 GPU！A100 无法运行！
+vllm serve deepseek-ai/DeepSeek-V3.2 \
+  --port 8000 \
+  --tensor-parallel-size 8 \
+  --max-model-len 24576 \
+  --gpu-memory-utilization 0.8 \
+  --quantization fp8 \
+  --kv-cache-dtype fp8_e4m3 \
+  --dtype bfloat16 \
+  --enable-auto-tool-choice \
+  --tool-call-parser deepseek_v3
+
+# 8x H100 80GB, FP8 量化 - 较大 context (24K，降低内存利用率)
+# 如果 16K 不够，可以尝试此配置
 vllm serve deepseek-ai/DeepSeek-V3 \
     --port 8000 \
     --tensor-parallel-size 8 \
-    --max-model-len 32768 \
+    --max-model-len 24576 \
     --gpu-memory-utilization 0.95 \
     --trust-remote-code \
-    --dtype float8_e4m3fn \
     --quantization fp8 \
-    --kv-cache-dtype fp8_e4m3
+    --kv-cache-dtype fp8_e4m3 \
+    --enable-auto-tool-choice \
+    --tool-call-parser deepseek_v3
+
+# ⚠️ 注意: 32K context + 0.95 内存利用率会 OOM！
+# 如果需要 32K context，请使用 0.85 内存利用率或更多 GPU
+
+# 如果不使用 FP8 量化 (BF16，需要更多显存)
+vllm serve deepseek-ai/DeepSeek-V3 \
+    --port 8000 \
+    --tensor-parallel-size 8 \
+    --max-model-len 8192 \
+    --gpu-memory-utilization 0.95 \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --enable-auto-tool-choice \
+    --tool-call-parser deepseek_v3
+```
+
+---
+
+**� TensorRT-LLM + NVFP4 (推荐: 最高吞吐)**
+
+> **推荐路线**: 对于 DeepSeek-V3.2，TRT-LLM + NVFP4 是 NVIDIA 官方推荐的部署方式，比 vLLM 有更高吞吐量。
+> NVFP4 是预量化模型，不需要自己 build engine，开箱即用。
+
+**1. DeepSeek-V3.2-NVFP4 (8x H100 80GB) - 最优方案**
+```bash
+# 使用部署脚本 (推荐)
+python scripts/deploy_trtllm.py --model deepseek-v3-nvfp4 --port 8000
+
+# 或手动部署:
+# Step 1: 启动 TRT-LLM 容器
+docker run --rm -it \
+  --gpus all \
+  --ipc=host \
+  --ulimit memlock=-1 \
+  --ulimit stack=67108864 \
+  -p 8000:8000 \
+  -v /mnt/models:/models \
+  -v $(pwd)/src/trtllm_api:/app \
+  -w /app \
+  nvcr.io/nvidia/tensorrt-llm/release:1.3.0rc1
+
+# Step 2: 在容器内启动 API
+pip install fastapi uvicorn pydantic
+python trtllm_openai_api.py \
+    --model nvidia/DeepSeek-V3.2-NVFP4 \
+    --tensor-parallel-size 8 \
+    --port 8000
+```
+
+**TRT-LLM vs vLLM 对比:**
+
+| 对比项 | vLLM | TRT-LLM + NVFP4 |
+|--------|------|-----------------|
+| DeepSeek-V3.2 支持 | ✅ | ✅ |
+| FP8/FP4 MoE | ❌ | ✅ |
+| 8×80GB 稳定性 | 一般 | **稳定** |
+| 吞吐量 | 高 | **更高** |
+| 工程复杂度 | 低 | 中 |
+| 生产可控性 | 中 | **高** |
+
+---
+
+**�💎 A100 顶配 (8x 80GB) - 推荐配置**
+
+> A100 用户推荐使用以下模型 (不支持 DeepSeek-V3)
+
+**1. Qwen3-32B (推荐) - 性能优秀，资源友好**
+```bash
+# 8x A100 80GB - 可以运行多实例或使用更大 context
+vllm serve Qwen/Qwen3-32B \
+    --port 8000 \
+    --tensor-parallel-size 2 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.90 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml
+```
+
+**2. Llama-3.1-70B-Instruct - 强大的通用模型**
+```bash
+# 8x A100 80GB
+vllm serve meta-llama/Llama-3.1-70B-Instruct \
+    --port 8000 \
+    --tensor-parallel-size 2 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.90 \
+    --enable-auto-tool-choice \
+    --tool-call-parser llama3_json
+```
+
+**3. Mixtral-8x22B-Instruct - MoE 架构 (无 MLA 限制)**
+```bash
+# 8x A100 80GB
+vllm serve mistralai/Mixtral-8x22B-Instruct-v0.1 \
+    --port 8000 \
+    --tensor-parallel-size 4 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.90 \
+    --enable-auto-tool-choice \
+    --tool-call-parser mistral
 ```
 
 **2. Qwen3-235B-A22B (MoE) - 顶级 MoE**
@@ -161,9 +413,11 @@ vllm serve deepseek-ai/DeepSeek-V3 \
 vllm serve Qwen/Qwen3-235B-A22B \
     --port 8000 \
     --tensor-parallel-size 8 \
-    --max-model-len 32768 \
+    --max-model-len 40960 \
     --gpu-memory-utilization 0.95 \
-    --trust-remote-code
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml
 ```
 
 ---
@@ -177,16 +431,20 @@ vllm serve Qwen/Qwen3-32B \
     --port 8000 \
     --tensor-parallel-size 1 \
     --max-model-len 32768 \
-    --gpu-memory-utilization 0.9
+    --gpu-memory-utilization 0.9 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml
 
 2 x A6000
-CUDA_VISIBLE_DEVICES=2,3 vllm serve Qwen/Qwen3-32B --port 8100 --tensor-parallel-size 2 --max-model-len 16384
+CUDA_VISIBLE_DEVICES=2,3 vllm serve Qwen/Qwen3-32B --port 8100 --tensor-parallel-size 2 --max-model-len 16384 --enable-auto-tool-choice --tool-call-parser qwen3_xml
 
 # 双 GPU (2x A100 40GB / 2x RTX 4090)
 vllm serve Qwen/Qwen3-32B \
     --port 8000 \
     --tensor-parallel-size 2 \
-    --max-model-len 16384
+    --max-model-len 16384 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml
 ```
 
 **2. DeepSeek-V3.2（高性能，需要多 GPU）**
@@ -197,14 +455,18 @@ vllm serve deepseek-ai/DeepSeek-V3 \
     --tensor-parallel-size 4 \
     --max-model-len 16384 \
     --gpu-memory-utilization 0.95 \
-    --trust-remote-code
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser deepseek_v3
 
 # 8x GPU 配置（更大 context）
 vllm serve deepseek-ai/DeepSeek-V3 \
     --port 8000 \
     --tensor-parallel-size 8 \
     --max-model-len 32768 \
-    --trust-remote-code
+    --trust-remote-code \
+    --enable-auto-tool-choice \
+    --tool-call-parser deepseek_v3
 ```
 
 **3. Qwen3-14B（轻量级，适合单 GPU）**
@@ -214,13 +476,17 @@ vllm serve Qwen/Qwen3-14B \
     --port 8000 \
     --tensor-parallel-size 1 \
     --max-model-len 32768 \
-    --gpu-memory-utilization 0.9
+    --gpu-memory-utilization 0.9 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml
 
 # RTX 3090 24GB（减少 context 长度）
 vllm serve Qwen/Qwen3-14B \
     --port 8000 \
     --max-model-len 8192 \
-    --gpu-memory-utilization 0.95
+    --gpu-memory-utilization 0.95 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml
 ```
 
 #### GPU 内存需求参考
@@ -230,22 +496,29 @@ vllm serve Qwen/Qwen3-14B \
 | Qwen3-14B | 14B | 1x RTX 4090 (24GB) | 1x A100 40GB | 32K |
 | Qwen3-32B | 32B | 2x RTX 4090 | 1x A100 80GB | 32K |
 | DeepSeek-V3.2 | 671B MoE | 4x A100 80GB | 8x H100 80GB | 32K |
-| Qwen3-235B-A22B | 235B MoE (22B激活) | 8x H100 80GB | 8x H100 80GB | 32K |
+| Qwen3-235B-A22B | 235B MoE (22B激活) | 1x GH200 480GB or 2x H100 80GB | 1x GH200-480GB | 40K |
 | DeepSeek-V3 FP8 | 671B MoE | 8x H100 80GB | 8x H100 80GB | 32K |
-| **⚡ Qwen3-235B (B200)** | **235B MoE** | **1x B200 192GB** | **1x B200** | **65K** |
+| **⚡ Qwen3-235B (B200)** | **235B MoE** | **1x B200 192GB** | **1x B200** | **40K** |
 | **⚡ DeepSeek-V3 (B200)** | **671B MoE** | **3x B200 192GB** | **3x B200** | **65K** |
+| **🚀 Qwen3-32B (GH200-96GB)** | **32B** | **1x GH200 96GB** | **1x GH200 96GB** | **32K** |
+| **🚀 Qwen3-235B (GH200-480GB)** | **235B MoE** | **1x GH200 480GB** | **1x GH200** | **40K** |
+| **🚀 DeepSeek-V3 (GH200-480GB)** | **671B MoE** | **1x GH200 480GB** | **1x GH200** | **131K** |
 
 #### 其他模型（备选）
 ```bash
 # Llama 3.1 70B
 vllm serve meta-llama/Llama-3.1-70B-Instruct \
     --port 8000 \
-    --tensor-parallel-size 2
+    --tensor-parallel-size 2 \
+    --enable-auto-tool-choice \
+    --tool-call-parser llama3_json
 
 # Mixtral 8x22B
 vllm serve mistralai/Mixtral-8x22B-Instruct-v0.1 \
     --port 8000 \
-    --tensor-parallel-size 2
+    --tensor-parallel-size 2 \
+    --enable-auto-tool-choice \
+    --tool-call-parser mistral
 ```
 
 ---
@@ -964,3 +1237,255 @@ sampling:
 ### Q: 如何并行运行多个实验？
 
 不建议在同一机器上并行运行，因为资源竞争可能导致结果不稳定。建议顺序运行或使用多台机器。
+
+### Q: vLLM 报错 "ImportError: libtorch_cuda.so: cannot open shared object file"？
+
+这是因为安装了 CPU 版本的 PyTorch。**最佳解决方法是让 vLLM 自动管理 PyTorch：**
+
+```bash
+# 推荐方法：让 vLLM 自动处理
+pip uninstall torch torchvision torchaudio vllm -y
+pip install vllm  # vLLM 会自动安装正确的 PyTorch 2.9.x + CUDA
+pip install "numpy<2.0"  # 修复 NumPy 兼容性
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+```
+
+**如果上述方法不行，手动指定版本：**
+
+```bash
+# 手动方法 (避免使用 CUDA 索引 URL，它们会安装错误版本)
+pip uninstall torch torchvision torchaudio vllm -y
+pip install torch==2.9.1 torchvision torchaudio  # 不用索引 URL
+pip install vllm
+pip install "numpy<2.0"
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+```
+
+⚠️ **注意**: 不要使用 `--index-url` 因为不同索引会安装错误的 PyTorch 版本 (cu126→2.10, cu124→2.4)。
+
+### Q: vLLM 报错 "undefined symbol: _ZN3c104cuda..." 或类似 C++ 符号错误？
+
+这是因为 vLLM 和 PyTorch 的 CUDA 版本不匹配。**推荐使用 vLLM 自动管理方法：**
+
+```bash
+# 最佳方法：让 vLLM 重新管理 PyTorch 版本
+pip uninstall vllm torch torchvision torchaudio -y
+pip install vllm --no-cache-dir  # 会安装正确的 PyTorch 2.9.x
+python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
+python -c "import vllm; print('vLLM working')"
+```
+
+### Q: 为什么不同的 CUDA 索引安装不同的 PyTorch 版本？
+
+PyTorch 的 CUDA 索引会安装特定版本：
+- `cu126` → PyTorch 2.10.x (可能与 vLLM 0.15.0 不兼容)
+- `cu124` → PyTorch 2.4.x (太老了)
+- `cu121` → PyTorch 2.1.x (太老了)
+
+**解决方法：**
+- 方法1（推荐）：`pip install vllm` 让 vLLM 自动选择 PyTorch 2.9.x
+- 方法2：手动指定 `pip install torch==2.9.1` 不使用索引URL
+
+### Q: vLLM 报错 "auto tool choice requires --enable-auto-tool-choice"？
+
+这是因为 Purple Agent 使用了自动工具选择功能，但 vLLM 服务没有启用相关参数：
+
+```bash
+# 错误的启动命令 (缺少工具调用支持)
+vllm serve Qwen/Qwen3-32B --port 8100 --tensor-parallel-size 2
+
+# 正确的启动命令 (添加工具调用支持)
+vllm serve Qwen/Qwen3-32B --port 8100 --tensor-parallel-size 2 \
+    --enable-auto-tool-choice --tool-call-parser qwen3_xml
+```
+
+**不同模型的工具解析器 (vLLM 0.15.0+):**
+- Qwen3 系列：`--tool-call-parser qwen3_xml`  
+- DeepSeek-V3：`--tool-call-parser deepseek_v3`
+- Llama3/4 系列：`--tool-call-parser llama3_json` 或 `llama4_json`
+- Mistral 系列：`--tool-call-parser mistral`
+
+查看所有可用解析器：`vllm serve --help | grep tool-call-parser`
+
+### Q: 出现 NumPy 兼容性警告？
+
+如果看到 "A module that was compiled using NumPy 1.x cannot be run in NumPy 2.2.6" 警告：
+
+```bash
+# 降级 NumPy 到 1.x 版本
+pip install "numpy<2.0"
+
+# 验证修复
+python -c "import torch; import vllm; print('All packages working')"
+```
+
+### Q: vLLM 报错 "CUDA out of memory" 如何解决？
+
+**原因**: 模型太大，超出 GPU 内存容量。
+
+**解决方案 (按优先级排序):**
+
+```bash
+# 方案 1: 降低 GPU 内存使用率
+vllm serve Qwen/Qwen3-32B \
+    --gpu-memory-utilization 0.80  # 从 0.90 降到 0.80
+
+# 方案 2: 使用更小的模型
+vllm serve Qwen/Qwen3-32B \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.90
+
+# 方案 3: 使用量化 (如果支持)
+vllm serve model_name \
+    --quantization gptq  # 或 awq, fp8
+
+# 方案 4: 多 GPU 并行 (如果有多张 GPU)
+vllm serve large_model \
+    --tensor-parallel-size 2  # 使用 2 张 GPU
+
+# 方案 5: 减少上下文长度
+vllm serve model_name \
+    --max-model-len 16384  # 从 40960 减少到 16384
+```
+
+**GH200-96GB 推荐配置:**
+- ✅ Qwen3-32B: 最佳平衡
+- ✅ Qwen3-14B: 轻量级选择
+- ❌ Qwen3-235B-A22B: 需要 480GB 或多 GPU
+- ❌ DeepSeek-V3: 需要多 GPU
+
+### Q: DeepSeek-V3 报错 "No valid attention backend found" / "FlashMLA Dense is only supported on Hopper devices"？
+
+**完整错误信息:**
+```
+ValueError: No valid attention backend found for cuda with AttentionSelectorConfig(...use_mla=True...)
+Reasons: {
+  FLASHMLA: [compute capability not supported, FlashMLA Dense is only supported on Hopper devices.], 
+  TRITON_MLA: [kv_cache_dtype not supported],
+  ...
+}
+```
+
+**根本原因**: DeepSeek-V3 使用 **MLA (Multi-head Latent Attention)** 架构，这是一种新型注意力机制，**只能在 Hopper 架构 GPU (H100/H200) 上运行**。
+
+| GPU | Compute Capability | 支持 DeepSeek-V3? |
+|-----|-------------------|------------------|
+| A100 | 8.0 | ❌ 不支持 |
+| A6000 | 8.6 | ❌ 不支持 |
+| RTX 4090 | 8.9 | ❌ 不支持 |
+| **H100** | **9.0** | ✅ 支持 |
+| **H200** | **9.0** | ✅ 支持 |
+| **GH200** | **9.0** | ✅ 支持 |
+
+**解决方案:**
+
+1. **尝试移除 FP8 KV cache** (可能让 TRITON_MLA 工作):
+```bash
+# 移除 --kv-cache-dtype fp8_e4m3 参数
+vllm serve deepseek-ai/DeepSeek-V3 \
+    --port 8000 \
+    --tensor-parallel-size 8 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.95 \
+    --trust-remote-code \
+    --quantization fp8 \
+    --enable-auto-tool-choice \
+    --tool-call-parser deepseek_v3
+```
+
+2. **使用替代模型** (如果方案1失败 - A100 推荐):
+```bash
+# Qwen3-32B - 推荐
+vllm serve Qwen/Qwen3-32B \
+    --port 8000 \
+    --tensor-parallel-size 2 \
+    --max-model-len 32768 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_xml
+
+# Llama-3.1-70B
+vllm serve meta-llama/Llama-3.1-70B-Instruct \
+    --port 8000 \
+    --tensor-parallel-size 2 \
+    --enable-auto-tool-choice \
+    --tool-call-parser llama3_json
+
+# Mixtral-8x22B (MoE 但无 MLA 限制)
+vllm serve mistralai/Mixtral-8x22B-Instruct-v0.1 \
+    --port 8000 \
+    --tensor-parallel-size 4 \
+    --enable-auto-tool-choice \
+    --tool-call-parser mistral
+```
+
+3. **使用 API 服务** (无需本地 GPU):
+```bash
+# 使用 OpenRouter API
+export OPENAI_API_BASE=https://openrouter.ai/api/v1
+export LLM_MODEL=deepseek/deepseek-chat
+```
+
+### Q: 如何检查 GPU 内存使用情况？
+
+```bash
+# 查看 GPU 状态
+nvidia-smi
+
+# 持续监控
+watch -n 1 nvidia-smi
+
+# 在 Python 中检查
+python -c "import torch; print(f'GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB')"
+```
+
+### Q: 评测时出现 "max_tokens is too large" 或上下文长度超限错误？
+
+**错误示例:**
+```
+llm_bizfinbench_failed: Error code: 400 - {'error': {'message': "'max_tokens' is too large: 800. 
+This model's maximum context length is 32768 tokens and your request has 32180 input tokens..."}}
+```
+
+**原因**: 评测使用的 LLM-as-judge 模型上下文长度不足以容纳长输入 + 评分输出。
+
+**解决方案:**
+
+1. **使用更大上下文的评测模型** (推荐):
+```yaml
+# config/eval_config.yaml
+llm_eval:
+  enabled: true
+  model: gpt-4o-mini  # 支持 128K context
+  temperature: 0.0
+```
+
+2. **增加 vLLM 上下文长度** (如果使用本地模型评测):
+```bash
+vllm serve Qwen/Qwen3-32B \
+    --max-model-len 65536  # 增加到 64K
+```
+
+3. **系统已自动优化**: 评测器会自动截断过长输入并动态调整 max_tokens
+
+### Q: 评测时出现 "LLM returned invalid JSON for PRBench evaluation"？
+
+**原因**: LLM 没有返回有效的 JSON 格式响应，可能因为：
+- 输出被截断
+- 模型不遵循 JSON 格式指令
+- 上下文溢出导致响应异常
+
+**解决方案:**
+
+1. **使用遵循指令能力更强的模型**:
+```yaml
+llm_eval:
+  model: gpt-4o-mini  # 或 claude-3-haiku 等
+```
+
+2. **检查 vLLM 日志** 确认模型正常响应
+
+3. **系统已自动处理**: 评测器会自动重试并使用简化提示
+
+**注意**: 这些错误不会导致评测完全失败，只是该任务会使用备用评分策略（规则匹配）。
