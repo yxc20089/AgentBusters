@@ -93,11 +93,15 @@ sampling:
   total_limit: 100
   seed: 42
 
+# llm_eval:
+#   enabled: true
+#   model: Qwen/Qwen3-32B
+#   api_base: http://localhost:8100/v1  # 使用本地 vLLM 服务
+#   api_key: dummy                       # vLLM 不需要真实 key
+#   temperature: 0.0
 llm_eval:
   enabled: true
-  model: Qwen/Qwen3-32B
-  api_base: http://localhost:8100/v1  # 使用本地 vLLM 服务
-  api_key: dummy                       # vLLM 不需要真实 key
+  model: gpt-4o-mini # 128k context
   temperature: 0.0
 
 debate: false

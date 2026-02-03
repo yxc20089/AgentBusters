@@ -338,11 +338,31 @@ def call_llm(
     system_prompt: Optional[str] = None,
     temperature: float = 0.0,
     max_tokens: int = 512,
+    model_context_limit: int = 32768,
 ) -> str:
     """
     Call an OpenAI- or Anthropic-style client and return text content.
+    
+    Automatically adjusts max_tokens if the prompt is too long to avoid context overflow.
     """
     model = model or get_llm_model()
+    
+    # Estimate token count (rough: ~4 chars per token for English)
+    estimated_prompt_tokens = (len(prompt) + len(system_prompt or "")) // 3
+    
+    # Dynamically adjust max_tokens to fit within context limit
+    available_tokens = model_context_limit - estimated_prompt_tokens - 100  # 100 token buffer
+    if available_tokens < max_tokens:
+        if available_tokens < 50:
+            # Not enough room even for minimal response
+            raise ValueError(
+                f"Prompt too long ({estimated_prompt_tokens} est. tokens) for model context limit "
+                f"({model_context_limit}). Available: {available_tokens} tokens."
+            )
+        max_tokens = max(50, available_tokens)
+        logger.debug(
+            f"Reduced max_tokens from requested to {max_tokens} due to context limit"
+        )
 
     if hasattr(client, "chat"):
         messages = []

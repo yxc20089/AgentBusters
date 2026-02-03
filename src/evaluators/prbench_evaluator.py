@@ -410,18 +410,30 @@ class PRBenchEvaluator(BaseDatasetEvaluator):
         domain = kwargs.get("domain", "Professional")
         topic = kwargs.get("topic", "")
 
+        # Truncate inputs to prevent context overflow
+        max_question_chars = 4000
+        max_expected_chars = 1500
+        max_predicted_chars = 2500
+        
+        question_truncated = (question or "N/A")[:max_question_chars]
+        expected_truncated = (expected or "N/A")[:max_expected_chars]
+        predicted_truncated = predicted[:max_predicted_chars]
+        
+        if len(question or "") > max_question_chars:
+            question_truncated += "\n... [truncated]"
+
         system_prompt = f"You are a strict evaluator for {domain} professional reasoning tasks."
         prompt = f"""DOMAIN: {domain}
 TOPIC: {topic}
 
 QUESTION:
-{question or "N/A"}
+{question_truncated}
 
 REFERENCE REASONING (scratchpad):
-{expected[:2000] if expected else "N/A"}
+{expected_truncated}
 
 CANDIDATE ANSWER:
-{predicted[:3000]}
+{predicted_truncated}
 
 EVALUATION CRITERIA:
 {chr(10).join(criteria_text)}
@@ -429,11 +441,11 @@ EVALUATION CRITERIA:
 For each criterion, determine if the candidate answer satisfies it.
 For PENALTY criteria, check if the answer inappropriately includes/violates it.
 
-Return JSON only:
+Return JSON only (no markdown, no explanation outside JSON):
 {{
-    "criteria_met": [1, 3, 5],  // indices of satisfied criteria (1-indexed)
-    "penalties_triggered": [8],  // indices of triggered penalties
-    "overall_quality": 0.75,  // 0.0-1.0 assessment
+    "criteria_met": [1, 3, 5],
+    "penalties_triggered": [8],
+    "overall_quality": 0.75,
     "reasoning": "brief explanation"
 }}
 """
@@ -449,8 +461,28 @@ Return JSON only:
             )
             data = extract_json(raw)
             if not data:
-                logger.warning("LLM returned invalid JSON for PRBench evaluation")
-                return None
+                # Retry with simpler prompt if JSON parsing fails
+                logger.debug("First attempt failed, retrying with simpler prompt")
+                simple_prompt = f"""Evaluate this answer briefly.
+
+QUESTION: {question_truncated[:1000]}
+ANSWER: {predicted_truncated[:1000]}
+
+Return ONLY valid JSON:
+{{"criteria_met": [], "penalties_triggered": [], "overall_quality": 0.5, "reasoning": "evaluation"}}
+"""
+                raw = call_llm(
+                    client=client,
+                    prompt=simple_prompt,
+                    model=self.llm_model,
+                    system_prompt="Return only valid JSON.",
+                    temperature=0.0,
+                    max_tokens=300,
+                )
+                data = extract_json(raw)
+                if not data:
+                    logger.warning("LLM returned invalid JSON for PRBench evaluation (both attempts)")
+                    return None
         except Exception as e:
             logger.warning(f"LLM PRBench evaluation failed: {e}")
             return None

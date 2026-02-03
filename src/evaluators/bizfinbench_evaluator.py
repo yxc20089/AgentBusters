@@ -179,17 +179,34 @@ class BizFinBenchEvaluator(BaseDatasetEvaluator):
         pred_num = self._extract_number(predicted)
         exp_num = self._extract_number(expected)
 
+        # Truncate long inputs to prevent context overflow
+        # Reserve ~2000 tokens for prompt template and response
+        max_question_chars = 8000
+        max_expected_chars = 6000
+        max_predicted_chars = 6000
+        
+        question_truncated = (question or "N/A")[:max_question_chars]
+        expected_truncated = expected[:max_expected_chars]
+        predicted_truncated = predicted[:max_predicted_chars]
+        
+        if len(question or "") > max_question_chars:
+            question_truncated += "\n... [truncated]"
+        if len(expected) > max_expected_chars:
+            expected_truncated += "\n... [truncated]"
+        if len(predicted) > max_predicted_chars:
+            predicted_truncated += "\n... [truncated]"
+
         system_prompt = "You are a strict grader for BizFinBench answers."
         prompt = f"""TASK TYPE: {task_type or "unknown"}
 
 QUESTION:
-{question or "N/A"}
+{question_truncated}
 
 REFERENCE ANSWER:
-{expected}
+{expected_truncated}
 
 CANDIDATE ANSWER:
-{predicted}
+{predicted_truncated}
 
 PARSED NUMBERS (for numeric tasks):
 expected_number: {exp_num if exp_num is not None else "N/A"}
