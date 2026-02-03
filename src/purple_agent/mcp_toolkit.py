@@ -35,15 +35,11 @@ from mcp_servers.web_search import create_web_search_server
 async def _call_tool(server, tool_name: str, arguments: dict):
     """Call a tool on a FastMCP server and parse the result.
     
-    FastMCP 2.14+ uses call_tool() which returns a list of TextContent.
-    The actual result is JSON-encoded in the text attribute.
+    FastMCP 2.14+ uses get_tool() to retrieve a FunctionTool,
+    then call tool.fn(**arguments) to execute it.
     """
-    result = await server.call_tool(tool_name, arguments)
-    if result and hasattr(result[0], 'text'):
-        try:
-            return json.loads(result[0].text)
-        except json.JSONDecodeError:
-            return result[0].text
+    tool = await server.get_tool(tool_name)
+    result = tool.fn(**arguments)
     return result
 
 
