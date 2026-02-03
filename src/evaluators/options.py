@@ -170,23 +170,23 @@ class OptionsEvaluator:
         # Extract Greeks using regex patterns
         import re
 
-        # Delta
-        delta_match = re.search(r'delta[:\s]+(-?\d+\.?\d*)', combined)
+        # Delta - match both lowercase and capitalized, with various separators
+        delta_match = re.search(r'[Dd]elta[:\s=]+(-?\d+\.?\d*)', combined)
         if delta_match:
             data.delta = float(delta_match.group(1))
 
-        # Gamma
-        gamma_match = re.search(r'gamma[:\s]+(-?\d+\.?\d*)', combined)
+        # Gamma 
+        gamma_match = re.search(r'[Gg]amma[:\s=]+(-?\d+\.?\d*)', combined)
         if gamma_match:
             data.gamma = float(gamma_match.group(1))
 
         # Theta
-        theta_match = re.search(r'theta[:\s]+(-?\d+\.?\d*)', combined)
+        theta_match = re.search(r'[Tt]heta[:\s=]+(-?\d+\.?\d*)', combined)
         if theta_match:
             data.theta = float(theta_match.group(1))
 
         # Vega
-        vega_match = re.search(r'vega[:\s]+(-?\d+\.?\d*)', combined)
+        vega_match = re.search(r'[Vv]ega[:\s=]+(-?\d+\.?\d*)', combined)
         if vega_match:
             data.vega = float(vega_match.group(1))
 
@@ -339,13 +339,28 @@ class OptionsEvaluator:
             score += 10
             feedback_parts.append("Limited Greeks analysis.")
         else:
-            # Check if Greeks mentioned without values
+            # Check if Greeks mentioned without values - improved detection
             analysis_lower = response.analysis.lower()
-            greek_terms = ["delta", "gamma", "theta", "vega"]
+            greek_terms = ["delta", "gamma", "theta", "vega", "rho"]
             mentioned = sum(1 for g in greek_terms if g in analysis_lower)
-            if mentioned >= 2:
-                score += 30
+            
+            # Also check for numeric values near Greek mentions
+            greek_with_numbers = 0
+            for greek in greek_terms:
+                # Look for Greek name followed by number within 20 characters
+                pattern = rf'{greek}[:\s=]{{0,10}}[-]?\d+\.?\d*'
+                if re.search(pattern, analysis_lower):
+                    greek_with_numbers += 1
+            
+            if greek_with_numbers >= 2:
+                score += 50  # Greeks calculated but extraction failed
+                feedback_parts.append("Greeks calculated but format not recognized.")
+            elif mentioned >= 3:
+                score += 30  # Greeks discussed conceptually
                 feedback_parts.append("Greeks discussed but values not extracted.")
+            elif mentioned >= 1:
+                score += 15  # Some Greeks awareness
+                feedback_parts.append("Limited Greeks discussion.")
             else:
                 feedback_parts.append("Missing Greeks analysis.")
 
@@ -504,6 +519,17 @@ class OptionsEvaluator:
         # Score each dimension
         pnl_score, pnl_feedback = await self._verify_pnl_accuracy(extracted, response)
         greeks_score, greeks_feedback = await self._verify_greeks_accuracy(extracted, response)
+        
+        # Debug logging for Greeks extraction
+        logger.debug(
+            "greeks_extraction_debug",
+            task_id=self.task.question_id,
+            extracted_delta=extracted.delta,
+            extracted_gamma=extracted.gamma,
+            extracted_theta=extracted.theta,
+            extracted_vega=extracted.vega,
+            greeks_score=greeks_score,
+        )
         strategy_score, strategy_feedback = await self._score_strategy_quality(extracted, response)
         risk_score, risk_feedback = await self._score_risk_management(extracted, response)
 
