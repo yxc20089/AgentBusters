@@ -25,15 +25,15 @@ dependencies = [
     "httpx>=0.28.1",
     "pydantic==2.12.5",
     "openai==2.16.0",  # Requires >=2.16.0 for httpx 0.28+ compatibility (proxy vs proxies)
-    "anthropic>=0.18.0",
+    "anthropic==0.37.2",
     "tiktoken==0.8.0",
     "numpy==1.26.4",
     "pandas==2.2.3",
     "scipy==1.13.1",
     "yfinance==1.0",
-    "edgartools>=2.0.0",
-    "asyncio>=3.4.0",
-    "aiohttp>=3.9.0",
+    "edgartools==2.34.2",
+    "asyncio==3.4.3",
+    "aiohttp==3.9.0",
     "python-dotenv==1.2.1",
     "structlog==24.4.0",
     "rich==14.3.2",
@@ -46,7 +46,7 @@ dependencies = [
     "uvicorn==0.38.0",
     "sqlalchemy==2.0.35",
     # MCP Protocol Support
-    "fastmcp>=2.0.0",
+    "fastmcp==2.0.0",
     # HuggingFace datasets for dynamic benchmark retrieval
     "datasets==4.0.0",  # Requires >=4.0.0 to fix dataclass compatibility issues
     "huggingface-hub==1.0.0",  # Ensure compatible version with datasets
