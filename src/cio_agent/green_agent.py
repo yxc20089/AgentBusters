@@ -164,6 +164,9 @@ class GreenAgent:
         config_llm_temp = (
             config_llm.temperature if config_llm and config_llm.temperature is not None else None
         )
+        # Extract api_base and api_key for separate evaluator API endpoint
+        config_api_base = config_llm.api_base if config_llm and config_llm.api_base else None
+        config_api_key = config_llm.api_key if config_llm and config_llm.api_key else None
 
         if eval_use_llm is not None:
             self.use_llm = eval_use_llm
@@ -176,7 +179,7 @@ class GreenAgent:
         self.llm_temperature = (
             eval_llm_temperature if eval_llm_temperature is not None else config_llm_temp
         )
-        self.llm_client = build_llm_client() if self.use_llm else None
+        self.llm_client = build_llm_client(api_base=config_api_base, api_key=config_api_key) if self.use_llm else None
         if self.use_llm and self.llm_client is None:
             self.use_llm = False
 
