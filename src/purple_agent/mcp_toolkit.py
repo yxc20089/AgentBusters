@@ -118,12 +118,12 @@ class MCPToolkit:
 
     async def _get_tools(self):
         """Get tools from all servers (only used in local mode)."""
-        edgar_tools = await self._edgar_server.get_tools() if self._edgar_server else None
-        yfinance_tools = await self._yfinance_server.get_tools() if self._yfinance_server else None
-        sandbox_tools = await self._sandbox_server.get_tools() if self._sandbox_server else None
-        options_chain_tools = await self._options_chain_server.get_tools()
-        trading_sim_tools = await self._trading_sim_server.get_tools()
-        risk_metrics_tools = await self._risk_metrics_server.get_tools()
+        edgar_tools = await self._edgar_server.list_tools() if self._edgar_server else None
+        yfinance_tools = await self._yfinance_server.list_tools() if self._yfinance_server else None
+        sandbox_tools = await self._sandbox_server.list_tools() if self._sandbox_server else None
+        options_chain_tools = await self._options_chain_server.list_tools()
+        trading_sim_tools = await self._trading_sim_server.list_tools()
+        risk_metrics_tools = await self._risk_metrics_server.list_tools()
         return {
             "edgar": edgar_tools,
             "yfinance": yfinance_tools,
@@ -171,7 +171,7 @@ class MCPToolkit:
             resp.raise_for_status()
             result = resp.json()
         else:
-            tools = await self._yfinance_server.get_tools()
+            tools = await self._yfinance_server.list_tools()
             get_quote = tools["get_quote"]
             result = get_quote.fn(ticker=ticker)
 
@@ -197,7 +197,7 @@ class MCPToolkit:
         Returns:
             List of historical price data points
         """
-        tools = await self._yfinance_server.get_tools()
+        tools = await self._yfinance_server.list_tools()
         get_historical = tools["get_historical_prices"]
 
         import time
@@ -225,7 +225,7 @@ class MCPToolkit:
         Returns:
             Financial statement data
         """
-        tools = await self._yfinance_server.get_tools()
+        tools = await self._yfinance_server.list_tools()
         get_financials = tools["get_financials"]
 
         import time
@@ -257,7 +257,7 @@ class MCPToolkit:
             resp.raise_for_status()
             result = resp.json()
         else:
-            tools = await self._yfinance_server.get_tools()
+            tools = await self._yfinance_server.list_tools()
             get_stats = tools["get_key_statistics"]
             result = get_stats.fn(ticker=ticker)
 
@@ -276,7 +276,7 @@ class MCPToolkit:
         Returns:
             Analyst price targets and recommendations
         """
-        tools = await self._yfinance_server.get_tools()
+        tools = await self._yfinance_server.list_tools()
         get_estimates = tools["get_analyst_estimates"]
 
         import time
@@ -297,7 +297,7 @@ class MCPToolkit:
         Returns:
             Historical earnings and upcoming estimates
         """
-        tools = await self._yfinance_server.get_tools()
+        tools = await self._yfinance_server.list_tools()
         get_earnings = tools["get_earnings"]
 
         import time
@@ -333,7 +333,7 @@ class MCPToolkit:
             resp.raise_for_status()
             result = resp.json()
         else:
-            tools = await self._edgar_server.get_tools()
+            tools = await self._edgar_server.list_tools()
             get_company = tools["get_company_info"]
             result = get_company.fn(ticker=ticker)
 
@@ -373,7 +373,7 @@ class MCPToolkit:
             resp.raise_for_status()
             result = resp.json()
         else:
-            tools = await self._edgar_server.get_tools()
+            tools = await self._edgar_server.list_tools()
             get_filing = tools["get_filing"]
             result = get_filing.fn(ticker=ticker, form_type=form_type, fiscal_year=fiscal_year)
 
@@ -415,7 +415,7 @@ class MCPToolkit:
             resp.raise_for_status()
             result = resp.json()
         else:
-            tools = await self._edgar_server.get_tools()
+            tools = await self._edgar_server.list_tools()
             get_xbrl = tools["get_xbrl_financials"]
             result = get_xbrl.fn(ticker=ticker, statement_type=statement_type, fiscal_year=fiscal_year)
 
@@ -456,7 +456,7 @@ class MCPToolkit:
             resp.raise_for_status()
             result = resp.json()
         else:
-            tools = await self._sandbox_server.get_tools()
+            tools = await self._sandbox_server.list_tools()
             execute = tools["execute_python"]
             result = execute.fn(code=code, timeout=timeout)
 
@@ -494,7 +494,7 @@ class MCPToolkit:
             resp.raise_for_status()
             result = resp.json()
         else:
-            tools = await self._sandbox_server.get_tools()
+            tools = await self._sandbox_server.list_tools()
             calc = tools["calculate_financial_metric"]
             result = calc.fn(metric=metric, values=values)
 
@@ -532,7 +532,7 @@ class MCPToolkit:
             resp.raise_for_status()
             result = resp.json()
         else:
-            tools = await self._sandbox_server.get_tools()
+            tools = await self._sandbox_server.list_tools()
             analyze = tools["analyze_time_series"]
             result = analyze.fn(data=data, operations=operations)
 
@@ -569,7 +569,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._options_chain_server.get_tools()
+        tools = await self._options_chain_server.list_tools()
         get_chain = tools["get_options_chain"]
         result = get_chain.fn(
             ticker=ticker,
@@ -611,7 +611,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._options_chain_server.get_tools()
+        tools = await self._options_chain_server.list_tools()
         calc_price = tools["calculate_option_price"]
         result = calc_price.fn(
             spot_price=spot_price,
@@ -651,7 +651,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._options_chain_server.get_tools()
+        tools = await self._options_chain_server.list_tools()
         calc_hist = tools["calculate_historical_option_price"]
         result = calc_hist.fn(
             ticker=ticker,
@@ -683,7 +683,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._options_chain_server.get_tools()
+        tools = await self._options_chain_server.list_tools()
         get_vol = tools["get_volatility_analysis"]
         result = get_vol.fn(ticker=ticker, lookback_days=lookback_days)
 
@@ -704,7 +704,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._options_chain_server.get_tools()
+        tools = await self._options_chain_server.list_tools()
         get_exp = tools["get_expirations"]
         result = get_exp.fn(ticker=ticker)
 
@@ -735,7 +735,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._options_chain_server.get_tools()
+        tools = await self._options_chain_server.list_tools()
         analyze = tools["analyze_strategy"]
         result = analyze.fn(legs=legs, spot_price=spot_price)
 
@@ -765,7 +765,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._trading_sim_server.get_tools()
+        tools = await self._trading_sim_server.list_tools()
         create = tools["create_portfolio"]
         result = create.fn(starting_cash=starting_cash, portfolio_id=portfolio_id)
 
@@ -805,7 +805,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._trading_sim_server.get_tools()
+        tools = await self._trading_sim_server.list_tools()
         execute = tools["execute_trade"]
         result = execute.fn(
             portfolio_id=portfolio_id,
@@ -836,7 +836,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._trading_sim_server.get_tools()
+        tools = await self._trading_sim_server.list_tools()
         get_port = tools["get_portfolio"]
         result = get_port.fn(portfolio_id=portfolio_id)
 
@@ -864,7 +864,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._trading_sim_server.get_tools()
+        tools = await self._trading_sim_server.list_tools()
         close = tools["close_position"]
         result = close.fn(
             portfolio_id=portfolio_id,
@@ -894,7 +894,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._trading_sim_server.get_tools()
+        tools = await self._trading_sim_server.list_tools()
         advance = tools["advance_time"]
         result = advance.fn(portfolio_id=portfolio_id, days=days)
 
@@ -915,7 +915,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._trading_sim_server.get_tools()
+        tools = await self._trading_sim_server.list_tools()
         report = tools["get_pnl_report"]
         result = report.fn(portfolio_id=portfolio_id)
 
@@ -933,7 +933,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._trading_sim_server.get_tools()
+        tools = await self._trading_sim_server.list_tools()
         list_port = tools["list_portfolios"]
         result = list_port.fn()
 
@@ -964,7 +964,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._risk_metrics_server.get_tools()
+        tools = await self._risk_metrics_server.list_tools()
         calc_greeks = tools["calculate_portfolio_greeks"]
         result = calc_greeks.fn(positions=positions)
 
@@ -996,7 +996,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._risk_metrics_server.get_tools()
+        tools = await self._risk_metrics_server.list_tools()
         calc_var = tools["calculate_var"]
         result = calc_var.fn(
             returns=returns,
@@ -1026,7 +1026,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._risk_metrics_server.get_tools()
+        tools = await self._risk_metrics_server.list_tools()
         calc_dd = tools["calculate_max_drawdown"]
         result = calc_dd.fn(portfolio_values=portfolio_values)
 
@@ -1052,7 +1052,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._risk_metrics_server.get_tools()
+        tools = await self._risk_metrics_server.list_tools()
         calc_returns = tools["calculate_risk_adjusted_returns"]
         result = calc_returns.fn(returns=returns, risk_free_rate=risk_free_rate)
 
@@ -1081,7 +1081,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._risk_metrics_server.get_tools()
+        tools = await self._risk_metrics_server.list_tools()
         stress = tools["stress_test"]
         result = stress.fn(positions=positions, scenarios=scenarios)
 
@@ -1111,7 +1111,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._risk_metrics_server.get_tools()
+        tools = await self._risk_metrics_server.list_tools()
         attr = tools["pnl_attribution"]
         result = attr.fn(
             position=position,
@@ -1150,7 +1150,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._web_search_server.get_tools()
+        tools = await self._web_search_server.list_tools()
         search = tools["web_search"]
         result = search.fn(
             query=query,
@@ -1183,7 +1183,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._web_search_server.get_tools()
+        tools = await self._web_search_server.list_tools()
         search = tools["search_financial_news"]
         result = search.fn(
             company=company,
@@ -1215,7 +1215,7 @@ class MCPToolkit:
         import time
         start = time.time()
 
-        tools = await self._web_search_server.get_tools()
+        tools = await self._web_search_server.list_tools()
         search = tools["search_earnings_info"]
         result = search.fn(
             ticker=ticker,
