@@ -204,6 +204,7 @@
           {"name": "risk_awareness", "weight": 0.15, "description": "Awareness of risks"}
         ]
       },
+      "ticker": "SPY",
       "vix_spot": 28,
       "vix_futures": 24,
       "spy_iv": 0.26
@@ -338,6 +339,7 @@
           {"name": "feasibility", "weight": 0.2, "description": "Honest feasibility assessment"}
         ]
       },
+      "ticker": "SPY",
       "starting_capital": 100000,
       "target_capital": 10000000,
       "time_horizon_months": 12
