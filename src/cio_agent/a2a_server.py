@@ -27,6 +27,7 @@ The server accepts:
 """
 
 import argparse
+import copy
 import json
 import logging
 import os
@@ -208,7 +209,32 @@ def main():
         type=int,
         help="Maximum characters for expected answer when truncation is enabled (default: 100)"
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable DEBUG level logging for detailed evaluation output (Greeks extraction, LLM calls, etc.)"
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show verbose startup output (default: quiet mode)"
+    )
     args = parser.parse_args()
+
+    # Configure logging level
+    from utils.logging import setup_logging
+    if args.debug:
+        setup_logging(level="DEBUG")
+        if args.verbose:
+            print("DEBUG logging enabled")
+    else:
+        setup_logging(level="INFO")
+        # Suppress verbose third-party library logs
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("a2a.client.card_resolver").setLevel(logging.WARNING)
+        logging.getLogger("a2a").setLevel(logging.WARNING)
+        logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
     # Validate configuration
     eval_config = None
@@ -380,47 +406,65 @@ def main():
         http_handler=request_handler,
     )
     
-    print(f"Starting CIO-Agent Green Agent A2A server...")
-    print(f"  Host: {args.host}")
-    print(f"  Port: {args.port}")
-    print(f"  Agent Card URL: {agent_card.url}")
-    print(f"  Agent Card: http://{args.host}:{args.port}/.well-known/agent.json")
-    
-    if eval_config:
-        # Config-based mode (recommended)
-        from cio_agent.eval_config import EvaluationConfig
-        config = EvaluationConfig.from_yaml(eval_config)
-        print(f"  Mode: Config-based ({config.name})")
-        print(f"  Datasets: {len(config.datasets)}")
-        for ds in config.datasets:
-            print(f"    - {ds.type}")
-        print(f"  Sampling: {config.sampling.strategy}")
-        if config.sampling.total_limit:
-            print(f"  Total Limit: {config.sampling.total_limit}")
-        if eval_use_llm is not None:
-            print(f"  LLM Grading (CLI): {'enabled' if eval_use_llm else 'disabled'}")
-        elif config.llm_eval and (
-            config.llm_eval.enabled is not None
-            or config.llm_eval.model
-            or config.llm_eval.temperature is not None
-        ):
-            print(f"  LLM Grading (config): {config.llm_eval.enabled}")
+    if args.verbose:
+        print(f"Starting CIO-Agent Green Agent A2A server...")
+        print(f"  Host: {args.host}")
+        print(f"  Port: {args.port}")
+        print(f"  Agent Card URL: {agent_card.url}")
+        print(f"  Agent Card: http://{args.host}:{args.port}/.well-known/agent.json")
+        
+        if eval_config:
+            # Config-based mode (recommended)
+            from cio_agent.eval_config import EvaluationConfig
+            config = EvaluationConfig.from_yaml(eval_config)
+            print(f"  Mode: Config-based ({config.name})")
+            print(f"  Datasets: {len(config.datasets)}")
+            for ds in config.datasets:
+                print(f"    - {ds.type}")
+            print(f"  Sampling: {config.sampling.strategy}")
+            if config.sampling.total_limit:
+                print(f"  Total Limit: {config.sampling.total_limit}")
+            if eval_use_llm is not None:
+                print(f"  LLM Grading (CLI): {'enabled' if eval_use_llm else 'disabled'}")
+            elif config.llm_eval and (
+                config.llm_eval.enabled is not None
+                or config.llm_eval.model
+                or config.llm_eval.temperature is not None
+            ):
+                print(f"  LLM Grading (config): {config.llm_eval.enabled}")
+        else:
+            # Legacy mode
+            print(f"  Mode: Legacy")
+            print(f"  Dataset Type: {args.dataset_type}")
+            if args.dataset_path:
+                print(f"  Dataset Path: {args.dataset_path}")
+            if args.task_type:
+                print(f"  Task Type: {args.task_type}")
+            if args.limit:
+                print(f"  Limit: {args.limit} examples")
+            if synthetic_questions:
+                print(f"  Synthetic Questions: {len(synthetic_questions)} loaded")
+            if eval_use_llm is not None:
+                print(f"  LLM Grading (CLI): {'enabled' if eval_use_llm else 'disabled'}")
     else:
-        # Legacy mode
-        print(f"  Mode: Legacy")
-        print(f"  Dataset Type: {args.dataset_type}")
-        if args.dataset_path:
-            print(f"  Dataset Path: {args.dataset_path}")
-        if args.task_type:
-            print(f"  Task Type: {args.task_type}")
-        if args.limit:
-            print(f"  Limit: {args.limit} examples")
-        if synthetic_questions:
-            print(f"  Synthetic Questions: {len(synthetic_questions)} loaded")
-        if eval_use_llm is not None:
-            print(f"  LLM Grading (CLI): {'enabled' if eval_use_llm else 'disabled'}")
+        print(f"Green Agent listening on {args.host}:{args.port}")
     
-    uvicorn.run(server.build(), host=args.host, port=args.port)
+    # Copy uvicorn config to avoid mutating global state
+    log_config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
+    if not args.verbose:
+        # Safely adjust uvicorn log levels (handle potential config structure changes)
+        try:
+            loggers_cfg = log_config.get("loggers", {})
+            uvicorn_logger_cfg = loggers_cfg.get("uvicorn")
+            if isinstance(uvicorn_logger_cfg, dict):
+                uvicorn_logger_cfg["level"] = "WARNING"
+            access_logger_cfg = loggers_cfg.get("uvicorn.access")
+            if isinstance(access_logger_cfg, dict):
+                access_logger_cfg["level"] = "WARNING"
+        except Exception as exc:
+            # If uvicorn's logging config structure changes, avoid failing hard
+            logging.getLogger(__name__).debug("Failed to adjust uvicorn log levels: %s", exc)
+    uvicorn.run(server.build(), host=args.host, port=args.port, log_config=log_config)
 
 
 if __name__ == '__main__':

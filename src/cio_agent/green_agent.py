@@ -13,6 +13,7 @@ Supported modes:
     - crypto: Crypto trading benchmark scenarios (config mode)
 """
 
+import asyncio
 import json
 import os
 import httpx
@@ -760,6 +761,14 @@ class GreenAgent:
                 return expected
             return expected[:100] + "..."
 
+    async def _run_evaluator_async(self, evaluator, **kwargs):
+        """Run a synchronous evaluator.evaluate() call in a thread pool.
+        
+        This prevents blocking the event loop when evaluators call LLM APIs,
+        enabling concurrent evaluation of multiple purple agents.
+        """
+        return await asyncio.to_thread(evaluator.evaluate, **kwargs)
+
     def _extract_excel_content(self, content: bytes, filename: str) -> str:
         """Extract content from Excel file as formatted text."""
         import io
@@ -850,7 +859,7 @@ class GreenAgent:
 
         lines.append("\n--- END REFERENCE FILES ---\n")
 
-        logger.info(f"Formatted {len(reference_files)} reference file URLs for Purple Agent")
+        logger.debug(f"Formatted {len(reference_files)} reference file URLs for Purple Agent")
         return "\n".join(lines)
 
     def _convert_synthetic_to_tasks(self, num_tasks: int) -> list[FABTask]:
@@ -955,7 +964,8 @@ class GreenAgent:
                 
                 # Use dataset-specific evaluator
                 if self.dataset_type == "bizfinbench":
-                    eval_result = self.dataset_evaluator.evaluate(
+                    eval_result = await self._run_evaluator_async(
+                        self.dataset_evaluator,
                         predicted=response,
                         expected=example.answer,
                         task_type=self.task_type,
@@ -983,7 +993,8 @@ class GreenAgent:
                     rubric = getattr(example, 'rubric', None)
                     rubric_weights = example.metadata.get("rubric_weights", {}) if hasattr(example, 'metadata') else {}
 
-                    eval_result = self.dataset_evaluator.evaluate(
+                    eval_result = await self._run_evaluator_async(
+                        self.dataset_evaluator,
                         predicted=response,
                         expected=example.answer,
                         rubric=rubric,
@@ -1094,7 +1105,7 @@ class GreenAgent:
                             reference_info = self._format_reference_files_for_agent(example.metadata)
                             if reference_info:
                                 message = example.question + reference_info
-                                logger.info(f"Added reference file URLs to GDPVal task (Purple Agent will fetch on demand)")
+                                logger.debug(f"Added reference file URLs to GDPVal task (Purple Agent will fetch on demand)")
                         except Exception as e:
                             logger.warning(f"Failed to format reference files for {example.example_id}: {e}")
 
@@ -1123,7 +1134,8 @@ class GreenAgent:
 
                 # Evaluate based on dataset type
                 if example.dataset_type == "bizfinbench":
-                    eval_result = evaluator.evaluate(
+                    eval_result = await self._run_evaluator_async(
+                        evaluator,
                         predicted=response,
                         expected=example.answer,
                         task_type=example.task_type,
@@ -1151,7 +1163,8 @@ class GreenAgent:
                     rubric = example.metadata.get("rubric")
                     rubric_weights = example.metadata.get("rubric_weights", {})
 
-                    eval_result = evaluator.evaluate(
+                    eval_result = await self._run_evaluator_async(
+                        evaluator,
                         predicted=response,
                         expected=example.answer,
                         rubric=rubric,
@@ -1191,7 +1204,8 @@ class GreenAgent:
                     ground_truth_value = example.metadata.get("ground_truth_value") if example.metadata else None
                     calculation_steps = example.metadata.get("calculation_steps") if example.metadata else None
                     
-                    eval_result = evaluator.evaluate(
+                    eval_result = await self._run_evaluator_async(
+                        evaluator,
                         predicted=response,
                         expected=example.answer or "",
                         question=example.question,
@@ -1230,7 +1244,8 @@ class GreenAgent:
 
                 elif example.dataset_type == "gdpval":
                     # GDPVal: Open-ended professional tasks (LLM-as-judge)
-                    eval_result = evaluator.evaluate(
+                    eval_result = await self._run_evaluator_async(
+                        evaluator,
                         predicted=response,
                         expected="",  # GDPVal has no ground truth
                         task_prompt=example.question,
@@ -1312,8 +1327,11 @@ class GreenAgent:
                             recommendation=self._extract_recommendation(response),
                         )
 
-                        # Initialize OptionsEvaluator with the task
-                        options_evaluator = OptionsEvaluator(task=fab_task)
+                        # Initialize OptionsEvaluator with the task and LLM client
+                        options_evaluator = OptionsEvaluator(
+                            task=fab_task,
+                            llm_client=self.llm_client,
+                        )
                         options_score = await options_evaluator.score(agent_response)
                     except ImportError as ie:
                         logger.error(f"Failed to import OptionsEvaluator: {ie}")

@@ -12,6 +12,7 @@ Supports hybrid evaluation:
 - Qualitative questions: Full LLM evaluation
 """
 
+import asyncio
 import json
 import re
 from typing import Any, Optional
@@ -199,7 +200,9 @@ Example output format:
 """
 
         try:
-            raw = call_llm(
+            # Run sync LLM call in thread pool to avoid blocking event loop
+            raw = await asyncio.to_thread(
+                call_llm,
                 client=client,
                 prompt=prompt,
                 model=self._get_llm_model(),
@@ -218,6 +221,77 @@ Example output format:
             return {}, "llm_invalid_json"
         except Exception as e:
             logger.warning(f"llm_extraction_failed: {e}")
+            return {}, f"llm_call_failed: {e}"
+
+    async def _llm_extract_greeks(
+        self,
+        response_text: str,
+    ) -> tuple[dict, Optional[str]]:
+        """
+        Use LLM to extract Greeks values from agent response.
+        
+        More robust than regex for handling varied formats like:
+        - "Delta is approximately 0.47"
+        - "the position delta equals -0.35"
+        - "θ (time decay): -$0.32 per day"
+        - "Gamma: about 0.025"
+        
+        Args:
+            response_text: The agent's response text
+            
+        Returns:
+            Tuple of (extracted_greeks_dict, error_message)
+        """
+        client = self._get_llm_client()
+        if not client:
+            return {}, "llm_client_unavailable"
+        
+        system_prompt = """You are a precise Greeks value extractor for options trading analysis.
+Extract the Delta, Gamma, Theta, and Vega values mentioned in the response.
+Return null for any Greek not explicitly stated.
+Do NOT calculate or infer values - only extract what is explicitly written.
+For Theta, if given as daily dollar amount (e.g., "loses $0.32 per day"), return as negative value."""
+
+        prompt = f"""Extract the Greeks values from this options analysis:
+
+CANDIDATE ANSWER:
+{response_text}
+
+Return a JSON object with these exact keys: delta, gamma, theta, vega
+Use null if a value is not found or unclear.
+
+Examples of what to extract:
+- "Delta: 0.474" → {{"delta": 0.474}}
+- "gamma is approximately 0.025" → {{"gamma": 0.025}}
+- "theta (time decay): -$0.32 per day" → {{"theta": -0.32}}
+- "vega = 0.15" → {{"vega": 0.15}}
+
+Output format:
+{{"delta": <number|null>, "gamma": <number|null>, "theta": <number|null>, "vega": <number|null>}}
+"""
+
+        try:
+            # Run sync LLM call in thread pool to avoid blocking event loop
+            raw = await asyncio.to_thread(
+                call_llm,
+                client=client,
+                prompt=prompt,
+                model=self._get_llm_model(),
+                system_prompt=system_prompt,
+                temperature=0.0,
+                max_tokens=200,
+            )
+            data = extract_json(raw)
+            if data:
+                logger.debug(
+                    "llm_greeks_extraction_success",
+                    task_id=self.task.question_id,
+                    extracted=data,
+                )
+                return data, None
+            return {}, "llm_invalid_json"
+        except Exception as e:
+            logger.warning(f"llm_greeks_extraction_failed: {e}")
             return {}, f"llm_call_failed: {e}"
 
     async def _llm_evaluate_qualitative(
@@ -278,7 +352,9 @@ Return JSON:
 """
 
         try:
-            raw = call_llm(
+            # Run sync LLM call in thread pool to avoid blocking event loop
+            raw = await asyncio.to_thread(
+                call_llm,
                 client=client,
                 prompt=prompt,
                 model=self._get_llm_model(),
@@ -290,7 +366,7 @@ Return JSON:
             if data and "total_score" in data:
                 score = float(data["total_score"])
                 feedback = data.get("feedback", "LLM evaluation completed.")
-                logger.info(
+                logger.debug(
                     "llm_qualitative_eval",
                     task_id=self.task.question_id,
                     score=score,
@@ -474,22 +550,47 @@ Return JSON:
         
         return None
 
-    def _extract_options_data(
+    def _extract_greeks_via_regex(self, text: str) -> tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+        """
+        Extract all Greeks (delta, gamma, theta, vega) from text using regex.
+        
+        This is a helper method to reduce code duplication across branches.
+        
+        Args:
+            text: The text to search for Greek values
+            
+        Returns:
+            Tuple of (delta, gamma, theta, vega) values, each Optional[float]
+        """
+        return (
+            self._extract_greek_value(text, "delta"),
+            self._extract_greek_value(text, "gamma"),
+            self._extract_greek_value(text, "theta"),
+            self._extract_greek_value(text, "vega"),
+        )
+
+    async def _extract_options_data(
         self,
         response: AgentResponse,
+        use_llm_for_greeks: bool = True,
     ) -> ExtractedOptionsData:
         """
         Extract options trading data from agent response.
 
         Parses the response for:
         - Strategy name and structure
-        - Greeks values
+        - Greeks values (via LLM if enabled, with regex fallback)
         - P&L metrics
         - Risk parameters
+        
+        Args:
+            response: The agent's response to parse
+            use_llm_for_greeks: Whether to use LLM for Greeks extraction (default True)
         """
         analysis = response.analysis.lower()
         recommendation = response.recommendation.lower()
         combined = f"{analysis} {recommendation}"
+        combined_raw = f"{response.analysis} {response.recommendation}"  # Keep original case for LLM
 
         data = ExtractedOptionsData()
 
@@ -513,11 +614,63 @@ Return JSON:
                 data.strategy_name = strategy
                 break
 
-        # Extract Greeks using multiple regex patterns for robustness
-        data.delta = self._extract_greek_value(combined, "delta")
-        data.gamma = self._extract_greek_value(combined, "gamma")
-        data.theta = self._extract_greek_value(combined, "theta")
-        data.vega = self._extract_greek_value(combined, "vega")
+        # Extract Greeks using LLM (with regex fallback)
+        if use_llm_for_greeks and self._use_llm_extraction:
+            greeks_data, error = await self._llm_extract_greeks(combined_raw)
+            if greeks_data and not error:
+                # Coerce LLM-extracted values to floats where possible
+                def _coerce_float(value: Any) -> Optional[float]:
+                    if value is None:
+                        return None
+                    try:
+                        return float(value)
+                    except (TypeError, ValueError):
+                        return None
+                
+                llm_delta = _coerce_float(greeks_data.get("delta"))
+                llm_gamma = _coerce_float(greeks_data.get("gamma"))
+                llm_theta = _coerce_float(greeks_data.get("theta"))
+                llm_vega = _coerce_float(greeks_data.get("vega"))
+                
+                # Get regex fallback values
+                regex_delta, regex_gamma, regex_theta, regex_vega = self._extract_greeks_via_regex(combined)
+                
+                # If LLM didn't provide any valid numeric Greeks, fall back fully to regex
+                if not any(v is not None for v in (llm_delta, llm_gamma, llm_theta, llm_vega)):
+                    data.delta, data.gamma, data.theta, data.vega = regex_delta, regex_gamma, regex_theta, regex_vega
+                    extraction_method = "regex"
+                else:
+                    # Use LLM values when present; fill missing ones via regex
+                    data.delta = llm_delta if llm_delta is not None else regex_delta
+                    data.gamma = llm_gamma if llm_gamma is not None else regex_gamma
+                    data.theta = llm_theta if llm_theta is not None else regex_theta
+                    data.vega = llm_vega if llm_vega is not None else regex_vega
+                    extraction_method = "llm+regex"
+                
+                logger.debug(
+                    "greeks_extracted",
+                    task_id=self.task.question_id,
+                    method=extraction_method,
+                    delta=data.delta,
+                    gamma=data.gamma,
+                    theta=data.theta,
+                    vega=data.vega,
+                )
+            else:
+                # Fallback to regex (LLM extraction failed)
+                data.delta, data.gamma, data.theta, data.vega = self._extract_greeks_via_regex(combined)
+                logger.debug(
+                    "greeks_extracted",
+                    task_id=self.task.question_id,
+                    method="regex",
+                    delta=data.delta,
+                    gamma=data.gamma,
+                    theta=data.theta,
+                    vega=data.vega,
+                )
+        else:
+            # Use regex extraction (LLM disabled)
+            data.delta, data.gamma, data.theta, data.vega = self._extract_greeks_via_regex(combined)
 
         # Max profit
         profit_match = re.search(r'max(?:imum)?\s+profit[:\s]+\$?(-?\d+(?:,\d{3})*(?:\.\d+)?)', combined)
@@ -843,21 +996,17 @@ Return JSON:
             OptionsScore with detailed breakdown
         """
         # Extract options data from response
-        extracted = self._extract_options_data(response)
+        extracted = await self._extract_options_data(response)
 
         # Score each dimension
         pnl_score, pnl_feedback = await self._verify_pnl_accuracy(extracted, response)
         greeks_score, greeks_feedback = await self._verify_greeks_accuracy(extracted, response)
         
-        # Debug logging for Greeks extraction
+        # Log Greeks score (debug level to avoid noise in batch scoring)
         logger.debug(
-            "greeks_extraction_debug",
+            "greeks_score",
             task_id=self.task.question_id,
-            extracted_delta=extracted.delta,
-            extracted_gamma=extracted.gamma,
-            extracted_theta=extracted.theta,
-            extracted_vega=extracted.vega,
-            greeks_score=greeks_score,
+            score=greeks_score,
         )
         strategy_score, strategy_feedback = await self._score_strategy_quality(extracted, response)
         risk_score, risk_feedback = await self._score_risk_management(extracted, response)
@@ -884,7 +1033,7 @@ Return JSON:
             all_feedback.append(f"Missing: {', '.join(missing[:3])}.")
         combined_feedback = " ".join(f for f in all_feedback if f)
 
-        logger.info(
+        logger.debug(
             "options_evaluation",
             task_id=self.task.question_id,
             category=self.task.category.value,
@@ -946,7 +1095,7 @@ Return JSON:
         
         is_quantitative = category in quantitative_categories or has_numerical
         
-        logger.info(
+        logger.debug(
             "hybrid_evaluation_start",
             task_id=question_id,
             category=category.value if hasattr(category, 'value') else str(category),
@@ -973,7 +1122,8 @@ Return JSON:
             
             # Fallback or primary regex extraction
             if not extracted:
-                regex_extracted = self._extract_options_data(response)
+                # Use regex-only extraction here since we're already using LLM for the full ground_truth
+                regex_extracted = await self._extract_options_data(response, use_llm_for_greeks=False)
                 extracted = {
                     "delta": regex_extracted.delta,
                     "gamma": regex_extracted.gamma,
@@ -1003,7 +1153,7 @@ Return JSON:
             )
             
             # Also run traditional scoring for qualitative aspects
-            extracted_data = self._extract_options_data(response)
+            extracted_data = await self._extract_options_data(response, use_llm_for_greeks=False)
             strategy_score, _ = await self._score_strategy_quality(extracted_data, response)
             risk_score, _ = await self._score_risk_management(extracted_data, response)
             
@@ -1043,7 +1193,7 @@ Return JSON:
             strategy_score = llm_score
             risk_score = llm_score
         
-        logger.info(
+        logger.debug(
             "hybrid_evaluation_complete",
             task_id=question_id,
             final_score=final_score,

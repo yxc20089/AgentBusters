@@ -395,7 +395,8 @@ class TestOptionsGreeksExtraction:
         assert evaluator._extract_greek_value(text, "delta") is None
         assert evaluator._extract_greek_value(text, "gamma") is None
 
-    def test_extract_options_data_integration(self, evaluator):
+    @pytest.mark.asyncio
+    async def test_extract_options_data_integration(self, evaluator):
         """Test _extract_options_data method integrates Greek extraction correctly."""
         from cio_agent.models import AgentResponse
         
@@ -419,7 +420,8 @@ class TestOptionsGreeksExtraction:
             confidence=0.8,
         )
         
-        extracted = evaluator._extract_options_data(response)
+        # Use regex-only mode to avoid LLM call in tests
+        extracted = await evaluator._extract_options_data(response, use_llm_for_greeks=False)
         
         assert extracted.delta == 0.42
         assert extracted.gamma == 0.025
@@ -429,3 +431,81 @@ class TestOptionsGreeksExtraction:
         assert extracted.max_profit == 500.0
         assert extracted.max_loss == 1000.0
 
+
+class TestOptionsLLMGreeksExtraction:
+    """Tests for LLM-based Greeks extraction."""
+    
+    @pytest.fixture
+    def evaluator(self):
+        """Create an OptionsEvaluator instance for testing."""
+        from cio_agent.models import Task, GroundTruth, TaskCategory, TaskRubric
+        from datetime import datetime, timezone
+        
+        task = Task(
+            question_id="test_llm_greeks",
+            category=TaskCategory.GREEKS_ANALYSIS,
+            question="Test LLM Greeks extraction",
+            ticker="AAPL",
+            fiscal_year=2024,
+            simulation_date=datetime.now(timezone.utc),
+            ground_truth=GroundTruth(macro_thesis="test"),
+            rubric=TaskRubric(),
+        )
+        return OptionsEvaluator(task=task)
+    
+    @pytest.mark.asyncio
+    async def test_llm_extract_greeks_prompt_format(self, evaluator):
+        """Test that _llm_extract_greeks returns expected format when client is None."""
+        # Explicitly ensure no LLM client is available (hermetic test)
+        evaluator.llm_client = None
+        evaluator._get_llm_client = lambda: None  # Stub to prevent env-based client creation
+        
+        result, error = await evaluator._llm_extract_greeks("Delta: 0.5")
+        assert result == {}
+        assert error == "llm_client_unavailable"
+    
+    @pytest.mark.asyncio
+    async def test_extract_options_data_with_llm_disabled(self, evaluator):
+        """Test extraction with LLM disabled falls back to regex."""
+        from cio_agent.models import AgentResponse
+        
+        response = AgentResponse(
+            agent_id="test_agent",
+            task_id="test_task",
+            analysis="Delta: 0.55, Gamma: 0.03, Theta: -0.25, Vega: 0.15",
+            recommendation="Hold",
+            confidence=0.7,
+        )
+        
+        # Disable LLM extraction
+        evaluator._use_llm_extraction = False
+        extracted = await evaluator._extract_options_data(response)
+        
+        # Should still extract using regex
+        assert extracted.delta == 0.55
+        assert extracted.gamma == 0.03
+        assert extracted.theta == -0.25
+        assert extracted.vega == 0.15
+    
+    @pytest.mark.asyncio
+    async def test_extract_options_data_llm_fallback_to_regex(self, evaluator):
+        """Test that when LLM fails, it falls back to regex extraction."""
+        from cio_agent.models import AgentResponse
+        
+        response = AgentResponse(
+            agent_id="test_agent",
+            task_id="test_task",
+            analysis="Delta = 0.42; Gamma = 0.025",
+            recommendation="Buy",
+            confidence=0.8,
+        )
+        
+        # Stub _get_llm_client to ensure no env-based client is created (hermetic test)
+        evaluator._use_llm_extraction = True
+        evaluator.llm_client = None
+        evaluator._get_llm_client = lambda: None
+        extracted = await evaluator._extract_options_data(response)
+        
+        # Should extract via regex fallback
+        assert extracted.delta == 0.42
+        assert extracted.gamma == 0.025
