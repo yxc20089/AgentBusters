@@ -448,7 +448,9 @@ def main():
     else:
         print(f"Green Agent listening on {args.host}:{args.port}")
     
-    log_config = uvicorn.config.LOGGING_CONFIG
+    # Copy uvicorn config to avoid mutating global state
+    import copy
+    log_config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
     if not args.verbose:
         log_config["loggers"]["uvicorn"]["level"] = "WARNING"
         log_config["loggers"]["uvicorn.access"]["level"] = "WARNING"

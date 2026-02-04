@@ -552,6 +552,25 @@ Return JSON:
         
         return None
 
+    def _extract_greeks_via_regex(self, text: str) -> tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+        """
+        Extract all Greeks (delta, gamma, theta, vega) from text using regex.
+        
+        This is a helper method to reduce code duplication across branches.
+        
+        Args:
+            text: The text to search for Greek values
+            
+        Returns:
+            Tuple of (delta, gamma, theta, vega) values, each Optional[float]
+        """
+        return (
+            self._extract_greek_value(text, "delta"),
+            self._extract_greek_value(text, "gamma"),
+            self._extract_greek_value(text, "theta"),
+            self._extract_greek_value(text, "vega"),
+        )
+
     async def _extract_options_data(
         self,
         response: AgentResponse,
@@ -615,42 +634,33 @@ Return JSON:
                 llm_theta = _coerce_float(greeks_data.get("theta"))
                 llm_vega = _coerce_float(greeks_data.get("vega"))
                 
+                # Get regex fallback values
+                regex_delta, regex_gamma, regex_theta, regex_vega = self._extract_greeks_via_regex(combined)
+                
                 # If LLM didn't provide any valid numeric Greeks, fall back fully to regex
                 if not any(v is not None for v in (llm_delta, llm_gamma, llm_theta, llm_vega)):
-                    data.delta = self._extract_greek_value(combined, "delta")
-                    data.gamma = self._extract_greek_value(combined, "gamma")
-                    data.theta = self._extract_greek_value(combined, "theta")
-                    data.vega = self._extract_greek_value(combined, "vega")
-                    logger.debug(
-                        "greeks_extracted",
-                        task_id=self.task.question_id,
-                        method="regex",
-                        delta=data.delta,
-                        gamma=data.gamma,
-                        theta=data.theta,
-                        vega=data.vega,
-                    )
+                    data.delta, data.gamma, data.theta, data.vega = regex_delta, regex_gamma, regex_theta, regex_vega
+                    extraction_method = "regex"
                 else:
                     # Use LLM values when present; fill missing ones via regex
-                    data.delta = llm_delta if llm_delta is not None else self._extract_greek_value(combined, "delta")
-                    data.gamma = llm_gamma if llm_gamma is not None else self._extract_greek_value(combined, "gamma")
-                    data.theta = llm_theta if llm_theta is not None else self._extract_greek_value(combined, "theta")
-                    data.vega = llm_vega if llm_vega is not None else self._extract_greek_value(combined, "vega")
-                    logger.debug(
-                        "greeks_extracted",
-                        task_id=self.task.question_id,
-                        method="llm+regex",
-                        delta=data.delta,
-                        gamma=data.gamma,
-                        theta=data.theta,
-                        vega=data.vega,
-                    )
+                    data.delta = llm_delta if llm_delta is not None else regex_delta
+                    data.gamma = llm_gamma if llm_gamma is not None else regex_gamma
+                    data.theta = llm_theta if llm_theta is not None else regex_theta
+                    data.vega = llm_vega if llm_vega is not None else regex_vega
+                    extraction_method = "llm+regex"
+                
+                logger.debug(
+                    "greeks_extracted",
+                    task_id=self.task.question_id,
+                    method=extraction_method,
+                    delta=data.delta,
+                    gamma=data.gamma,
+                    theta=data.theta,
+                    vega=data.vega,
+                )
             else:
-                # Fallback to regex
-                data.delta = self._extract_greek_value(combined, "delta")
-                data.gamma = self._extract_greek_value(combined, "gamma")
-                data.theta = self._extract_greek_value(combined, "theta")
-                data.vega = self._extract_greek_value(combined, "vega")
+                # Fallback to regex (LLM extraction failed)
+                data.delta, data.gamma, data.theta, data.vega = self._extract_greeks_via_regex(combined)
                 logger.debug(
                     "greeks_extracted",
                     task_id=self.task.question_id,
@@ -661,11 +671,8 @@ Return JSON:
                     vega=data.vega,
                 )
         else:
-            # Use regex extraction
-            data.delta = self._extract_greek_value(combined, "delta")
-            data.gamma = self._extract_greek_value(combined, "gamma")
-            data.theta = self._extract_greek_value(combined, "theta")
-            data.vega = self._extract_greek_value(combined, "vega")
+            # Use regex extraction (LLM disabled)
+            data.delta, data.gamma, data.theta, data.vega = self._extract_greeks_via_regex(combined)
 
         # Max profit
         profit_match = re.search(r'max(?:imum)?\s+profit[:\s]+\$?(-?\d+(?:,\d{3})*(?:\.\d+)?)', combined)
