@@ -406,3 +406,83 @@ class TestWebSearchServer:
         
         assert hasattr(result, "query")
         assert "MSFT" in result.query
+
+
+class TestOptionsChainServer:
+    """Tests for Options Chain MCP server fixes."""
+
+    async def test_get_options_chain_with_nearest(self):
+        """Test that get_options_chain handles 'nearest' expiration correctly."""
+        from mcp_servers.options_chain import create_options_chain_server
+        
+        server = create_options_chain_server()
+        tool = await server.get_tool("get_options_chain")
+        
+        # This should not raise "time data 'nearest' does not match format '%Y-%m-%d'"
+        result = tool.fn(ticker="SPY", expiration="nearest")
+        
+        # Should return valid result or error about no options, not format error
+        if "error" in result:
+            assert "does not match format" not in result["error"]
+        else:
+            assert "ticker" in result
+
+    async def test_get_options_chain_with_none_expiration(self):
+        """Test that get_options_chain works with None expiration."""
+        from mcp_servers.options_chain import create_options_chain_server
+        
+        server = create_options_chain_server()
+        tool = await server.get_tool("get_options_chain")
+        
+        result = tool.fn(ticker="SPY", expiration=None)
+        
+        # Should work without error
+        if "error" in result:
+            # Only acceptable errors are API/data related, not format errors
+            assert "does not match format" not in result["error"]
+
+    async def test_calculate_option_price_with_spot_price(self):
+        """Test that calculate_option_price accepts spot_price as alias."""
+        from mcp_servers.options_chain import create_options_chain_server
+        from datetime import date, timedelta
+        
+        server = create_options_chain_server()
+        tool = await server.get_tool("calculate_option_price")
+        
+        # Calculate expiration date 30 days from now
+        exp_date = (date.today() + timedelta(days=30)).strftime("%Y-%m-%d")
+        
+        # This should not raise "unexpected keyword argument 'spot_price'"
+        result = tool.fn(
+            ticker="SPY",
+            strike=500.0,
+            expiration=exp_date,
+            option_type="call",
+            spot_price=505.0,  # Using alias instead of underlying_price
+            volatility=0.20,
+        )
+        
+        # Should return valid result
+        if "error" not in result:
+            assert "theoretical_price" in result
+            assert result["underlying_price"] == 505.0
+
+
+class TestFABBenchmarkData:
+    """Tests for FAB benchmark data loading."""
+
+    def test_fab_data_path_resolution(self):
+        """Test that FAB data can be found via alternate paths."""
+        from purple_agent.mcp_toolkit import MCPToolkit
+        from pathlib import Path
+        
+        toolkit = MCPToolkit()
+        
+        # Check if the Windows-compatible path works
+        expected_path = Path(__file__).parent.parent / "finance-agent" / "data" / "public.csv"
+        if expected_path.exists():
+            data = toolkit._load_fab_data()
+            assert data is not None
+            # If file exists and has data, should not be empty
+            if len(data) > 0:
+                assert isinstance(data[0], dict)

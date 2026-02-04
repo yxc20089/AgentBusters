@@ -1138,11 +1138,14 @@ class MCPToolkit:
         fab_path = Path(self._fab_data_path)
 
         if not fab_path.exists():
-            # Try alternate paths
+            # Try alternate paths (Windows and Linux)
             alternate_paths = [
                 Path("finance-agent/data/public.csv"),
                 Path("data/public.csv"),
                 Path("/home/agent/data/public.csv"),
+                # Windows paths relative to AgentBusters directory
+                Path(__file__).parent.parent.parent / "finance-agent" / "data" / "public.csv",
+                Path(__file__).parent.parent.parent / "data" / "public.csv",
             ]
             for alt_path in alternate_paths:
                 if alt_path.exists():

@@ -282,16 +282,20 @@ def create_options_chain_server(
                 return {"error": f"No options available for {ticker}"}
 
             # Select expiration
-            if expiration is None:
+            if expiration is None or expiration.lower() in ("nearest", "next", "first"):
                 selected_exp = expirations[0]
             elif expiration in expirations:
                 selected_exp = expiration
             else:
                 # Find nearest expiration
-                target = datetime.strptime(expiration, "%Y-%m-%d").date()
-                selected_exp = min(expirations, key=lambda x: abs(
-                    datetime.strptime(x, "%Y-%m-%d").date() - target
-                ))
+                try:
+                    target = datetime.strptime(expiration, "%Y-%m-%d").date()
+                    selected_exp = min(expirations, key=lambda x: abs(
+                        datetime.strptime(x, "%Y-%m-%d").date() - target
+                    ))
+                except ValueError:
+                    # Invalid date format, use first available
+                    selected_exp = expirations[0]
 
             # Calculate days to expiry
             exp_date = datetime.strptime(selected_exp, "%Y-%m-%d").date()
@@ -386,6 +390,7 @@ def create_options_chain_server(
         option_type: Literal["call", "put"],
         volatility: float | None = None,
         underlying_price: float | None = None,
+        spot_price: float | None = None,  # Alias for underlying_price
     ) -> dict[str, Any]:
         """
         Calculate theoretical option price using Black-Scholes.
@@ -397,6 +402,7 @@ def create_options_chain_server(
             option_type: "call" or "put"
             volatility: Annual volatility (e.g., 0.30 for 30%). If None, uses historical.
             underlying_price: Current stock price. If None, fetches from market.
+            spot_price: Alias for underlying_price (for compatibility)
 
         Returns:
             Theoretical price and all Greeks
@@ -404,7 +410,9 @@ def create_options_chain_server(
         try:
             stock = yf.Ticker(ticker)
 
-            # Get underlying price
+            # Get underlying price (support spot_price alias)
+            if underlying_price is None and spot_price is not None:
+                underlying_price = spot_price
             if underlying_price is None:
                 info = stock.info
                 underlying_price = info.get("regularMarketPrice") or info.get("currentPrice", 0)
