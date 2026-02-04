@@ -44,6 +44,13 @@ ALLOWED_MODULES = {
     "datetime",
     "scipy", "scipy.stats",
     "statistics",
+    "json",  # Safe for serialization
+    "re",    # Regex for text processing
+    "collections",  # Counter, defaultdict, etc.
+    "itertools",  # Combinatorics
+    "functools",  # reduce, partial
+    "decimal",  # Precise decimal arithmetic
+    "fractions",  # Rational numbers
 }
 
 
