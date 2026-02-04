@@ -147,6 +147,100 @@ print(f"CAGR: {growth_rate:.2%}")
         assert "std" in result
         assert "trend" in result
 
+    @pytest.mark.asyncio
+    async def test_calculate_option_price_local_computation(self, toolkit):
+        """Test that calculate_option_price uses local Black-Scholes computation."""
+        # Test basic call option
+        result = await toolkit.calculate_option_price(
+            spot_price=450.0,
+            strike_price=460.0,
+            days_to_expiry=45,
+            volatility=0.45,
+            risk_free_rate=0.0525,
+            option_type="call",
+        )
+
+        # Should return valid result without MCP server errors
+        assert "error" not in result
+        assert "price" in result
+        assert "delta" in result
+        assert "gamma" in result
+        assert "theta" in result
+        assert "vega" in result
+        assert "rho" in result
+        
+        # Verify price is reasonable (OTM call with high IV)
+        assert result["price"] > 0
+        assert result["spot_price"] == 450.0
+        assert result["strike_price"] == 460.0
+        assert result["days_to_expiry"] == 45
+        
+        # Delta should be between 0 and 1 for call
+        assert 0 <= result["delta"] <= 1
+        
+        # Gamma should be positive
+        assert result["gamma"] > 0
+
+    @pytest.mark.asyncio
+    async def test_calculate_option_price_put(self, toolkit):
+        """Test put option pricing."""
+        result = await toolkit.calculate_option_price(
+            spot_price=100.0,
+            strike_price=105.0,
+            days_to_expiry=30,
+            volatility=0.25,
+            risk_free_rate=0.05,
+            option_type="put",
+        )
+
+        assert "error" not in result
+        assert "price" in result
+        
+        # Delta should be between -1 and 0 for put
+        assert -1 <= result["delta"] <= 0
+        
+        # ITM put should have significant value
+        assert result["price"] > 0
+
+    @pytest.mark.asyncio
+    async def test_calculate_option_price_at_expiration(self, toolkit):
+        """Test option pricing at or past expiration (T=0)."""
+        # ITM call at expiration
+        result = await toolkit.calculate_option_price(
+            spot_price=110.0,
+            strike_price=100.0,
+            days_to_expiry=0,
+            volatility=0.20,
+            risk_free_rate=0.05,
+            option_type="call",
+        )
+
+        assert "error" not in result
+        # Should equal intrinsic value
+        assert result["price"] == 10.0  # 110 - 100
+        assert result["gamma"] == 0.0
+        assert result["vega"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_calculate_option_price_with_dividend(self, toolkit):
+        """Test option pricing with dividend yield."""
+        result = await toolkit.calculate_option_price(
+            spot_price=150.0,
+            strike_price=150.0,
+            days_to_expiry=90,
+            volatility=0.30,
+            risk_free_rate=0.05,
+            option_type="call",
+            dividend_yield=0.02,
+        )
+
+        assert "error" not in result
+        assert "price" in result
+        
+        # ATM call with dividend should have reasonable delta
+        # With 2% dividend yield, delta will be slightly > 0.5 for ATM call
+        assert 0.4 < result["delta"] < 0.7
+
 
 class TestFinanceAgentExecutorTemperature:
     """

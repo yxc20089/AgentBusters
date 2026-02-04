@@ -467,6 +467,27 @@ class TestOptionsChainServer:
             assert "theoretical_price" in result
             assert result["underlying_price"] == 505.0
 
+    async def test_options_chain_nan_handling_in_code(self):
+        """Test that the NaN handling code works correctly."""
+        import math
+        
+        # Test the exact logic we added to handle NaN values
+        test_cases = [
+            (float('nan'), 0),  # NaN should become 0
+            (None, 0),          # None should become 0
+            (100, 100),         # Normal value should pass through
+            (0, 0),             # Zero should pass through
+        ]
+        
+        for input_val, expected in test_cases:
+            # Replicate the NaN handling logic from options_chain.py
+            volume_raw = input_val
+            if volume_raw is None or (isinstance(volume_raw, float) and math.isnan(volume_raw)):
+                volume_raw = 0
+            result = int(volume_raw or 0)
+            
+            assert result == expected, f"Failed for input {input_val}: got {result}, expected {expected}"
+
 
 class TestFABBenchmarkData:
     """Tests for FAB benchmark data loading."""

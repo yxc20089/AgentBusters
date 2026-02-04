@@ -326,6 +326,16 @@ def create_options_chain_server(
                     if iv is None or iv <= 0 or iv > 5:
                         iv = hist_vol
 
+                    # Safely convert volume and open_interest (handle NaN)
+                    volume_raw = row.get("volume", 0)
+                    open_interest_raw = row.get("openInterest", 0)
+                    
+                    # Handle NaN values
+                    if volume_raw is None or (isinstance(volume_raw, float) and math.isnan(volume_raw)):
+                        volume_raw = 0
+                    if open_interest_raw is None or (isinstance(open_interest_raw, float) and math.isnan(open_interest_raw)):
+                        open_interest_raw = 0
+                    
                     quote = {
                         "contract_symbol": row.get("contractSymbol", ""),
                         "ticker": ticker,
@@ -335,8 +345,8 @@ def create_options_chain_server(
                         "bid": float(row.get("bid", 0) or 0),
                         "ask": float(row.get("ask", 0) or 0),
                         "last_price": float(row.get("lastPrice", 0) or 0),
-                        "volume": int(row.get("volume", 0) or 0),
-                        "open_interest": int(row.get("openInterest", 0) or 0),
+                        "volume": int(volume_raw or 0),
+                        "open_interest": int(open_interest_raw or 0),
                         "implied_volatility": float(iv),
                         "in_the_money": bool(row.get("inTheMoney", False)),
                     }

@@ -510,9 +510,15 @@ class TestDebateQualityE2E:
 class TestFullPipelineE2E:
     """Integration test for the complete evaluation pipeline."""
 
+    @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_complete_evaluation_pipeline(self):
-        """Test the entire evaluation pipeline end-to-end."""
+        """Test the entire evaluation pipeline end-to-end.
+        
+        Note: Requires Purple Agent running at http://localhost:9110
+        Run with: pytest tests/test_e2e.py::TestFullPipelineE2E -v
+        Skip with: pytest tests/ -v -m "not integration"
+        """
         # Create task
         task = Task(
             question_id="NVDA_Q3_FY2026_full_test",

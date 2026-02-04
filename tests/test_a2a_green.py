@@ -61,9 +61,9 @@ def validate_event(event_data: dict) -> list[str]:
 
 
 # A2A messaging helpers
-async def send_text_message(text: str, url: str, context_id: str | None = None, streaming: bool = False):
+async def send_text_message(text: str, url: str, context_id: str | None = None, streaming: bool = False, timeout: int = 120):
     """Send a text message to an A2A agent."""
-    async with httpx.AsyncClient(timeout=120) as httpx_client:  # 120s for LLM calls
+    async with httpx.AsyncClient(timeout=timeout) as httpx_client:
         resolver = A2ACardResolver(httpx_client=httpx_client, base_url=url)
         agent_card = await resolver.get_agent_card()
         config = ClientConfig(httpx_client=httpx_client, streaming=streaming)
@@ -178,19 +178,22 @@ async def test_evaluation_request_format(agent):
         assert "invalid request" not in error_str, f"Request format was rejected: {e}"
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_synthetic_questions_evaluation(agent, purple_agent):
     """
     Test that the Green Agent can evaluate using synthetic questions.
     
     This test requires:
-    - Green Agent running with --synthetic-questions
-    - Purple Agent running
+    - Green Agent running with --eval-config (e.g., config/eval_quick_test.yaml)
+    - Purple Agent running at :9110
     
     Run with:
         pytest tests/test_a2a_green.py::test_synthetic_questions_evaluation -v \
             --agent-url http://localhost:9109 \
             --purple-url http://localhost:9110
+    
+    Skip with: pytest tests/ -m "not integration"
     """
     # Create evaluation request that will use synthetic questions
     eval_request = {
@@ -206,7 +209,8 @@ async def test_synthetic_questions_evaluation(agent, purple_agent):
         events = await send_text_message(
             json.dumps(eval_request),
             agent,
-            streaming=False
+            streaming=False,
+            timeout=600  # 10 minutes for full evaluation with MCP calls
         )
         
         # Check that we got evaluation events

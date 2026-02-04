@@ -57,7 +57,7 @@ jobs:
         run: uv sync --extra dev
 
       - name: Run tests
-        run: uv run pytest tests/ -v --ignore=tests/test_e2e.py
+        run: uv run pytest tests/ -v -m "not integration"
 
       - name: Stop container and show logs
         if: always()

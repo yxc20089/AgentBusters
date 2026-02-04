@@ -911,15 +911,28 @@ Where:
 ## Testing
 
 ```bash
-# Run all tests
+# Run all tests (excluding integration tests that require external services)
+python -m pytest tests/ -v -m "not integration"
+
+# Run all tests including integration tests (requires Purple Agent at :9110)
 python -m pytest tests/ -v
 
-# Run A2A conformance tests
+# Run specific test categories
+python -m pytest tests/test_evaluators.py -v          # Unit tests
+python -m pytest tests/test_purple_agent.py -v        # Purple Agent tests
+python -m pytest tests/test_mcp_servers.py -v         # MCP server tests
+python -m pytest tests/ -v -m integration             # Integration tests only
+
+# Run A2A conformance tests (requires Green Agent at :9109)
 python -m pytest tests/test_a2a_green.py -v --agent-url http://localhost:9109
 
 # Run with coverage
-python -m pytest tests/ --cov=src --cov-report=html
+python -m pytest tests/ --cov=src --cov-report=html -m "not integration"
 ```
+
+**Test Markers:**
+- `@pytest.mark.integration`: Tests requiring external services (Purple/Green agents)
+- `@pytest.mark.asyncio`: Async tests
 
 ## API Reference
 

@@ -601,9 +601,76 @@ class MCPToolkit:
             Option price and all Greeks (delta, gamma, theta, vega, rho)
         """
         import time
+        import math
+        from scipy.stats import norm
+        
         start = time.time()
 
-        result = await _call_tool(self._options_chain_server, "calculate_option_price", {"spot_price": spot_price, "strike_price": strike_price, "days_to_expiry": days_to_expiry, "volatility": volatility, "risk_free_rate": risk_free_rate, "option_type": option_type, "dividend_yield": dividend_yield})
+        # Calculate time to expiry in years
+        T = days_to_expiry / 365.0
+        S = spot_price
+        K = strike_price
+        r = risk_free_rate
+        sigma = volatility
+        q = dividend_yield
+
+        if T <= 0:
+            # At or past expiration
+            if option_type.lower() == "call":
+                intrinsic = max(S - K, 0)
+            else:
+                intrinsic = max(K - S, 0)
+            result = {
+                "price": intrinsic,
+                "delta": 1.0 if intrinsic > 0 else 0.0,
+                "gamma": 0.0,
+                "theta": 0.0,
+                "vega": 0.0,
+                "rho": 0.0,
+                "spot_price": S,
+                "strike_price": K,
+                "days_to_expiry": days_to_expiry,
+                "volatility": sigma,
+                "risk_free_rate": r,
+                "option_type": option_type,
+            }
+        else:
+            # Black-Scholes calculation
+            d1 = (math.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+            d2 = d1 - sigma * math.sqrt(T)
+
+            if option_type.lower() == "call":
+                price = S * math.exp(-q * T) * norm.cdf(d1) - K * math.exp(-r * T) * norm.cdf(d2)
+                delta = math.exp(-q * T) * norm.cdf(d1)
+                rho = K * T * math.exp(-r * T) * norm.cdf(d2) / 100  # Per 1% change
+            else:  # put
+                price = K * math.exp(-r * T) * norm.cdf(-d2) - S * math.exp(-q * T) * norm.cdf(-d1)
+                delta = -math.exp(-q * T) * norm.cdf(-d1)
+                rho = -K * T * math.exp(-r * T) * norm.cdf(-d2) / 100  # Per 1% change
+
+            # Greeks (same for both call and put)
+            gamma = math.exp(-q * T) * norm.pdf(d1) / (S * sigma * math.sqrt(T))
+            vega = S * math.exp(-q * T) * norm.pdf(d1) * math.sqrt(T) / 100  # Per 1% change
+            theta = (
+                -S * norm.pdf(d1) * sigma * math.exp(-q * T) / (2 * math.sqrt(T))
+                - r * K * math.exp(-r * T) * (norm.cdf(d2) if option_type.lower() == "call" else norm.cdf(-d2))
+                + q * S * math.exp(-q * T) * (norm.cdf(d1) if option_type.lower() == "call" else norm.cdf(-d1))
+            ) / 365  # Per day
+
+            result = {
+                "price": round(price, 4),
+                "delta": round(delta, 4),
+                "gamma": round(gamma, 6),
+                "theta": round(theta, 4),
+                "vega": round(vega, 4),
+                "rho": round(rho, 4),
+                "spot_price": S,
+                "strike_price": K,
+                "days_to_expiry": days_to_expiry,
+                "volatility": sigma,
+                "risk_free_rate": r,
+                "option_type": option_type,
+            }
 
         elapsed = int((time.time() - start) * 1000)
         self._record_call("options_chain", "calculate_option_price", result, elapsed)
