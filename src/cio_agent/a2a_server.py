@@ -27,6 +27,7 @@ The server accepts:
 """
 
 import argparse
+import copy
 import json
 import logging
 import os
@@ -449,7 +450,6 @@ def main():
         print(f"Green Agent listening on {args.host}:{args.port}")
     
     # Copy uvicorn config to avoid mutating global state
-    import copy
     log_config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
     if not args.verbose:
         log_config["loggers"]["uvicorn"]["level"] = "WARNING"

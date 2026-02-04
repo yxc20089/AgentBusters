@@ -395,6 +395,7 @@ class TestOptionsGreeksExtraction:
         assert evaluator._extract_greek_value(text, "delta") is None
         assert evaluator._extract_greek_value(text, "gamma") is None
 
+    @pytest.mark.asyncio
     async def test_extract_options_data_integration(self, evaluator):
         """Test _extract_options_data method integrates Greek extraction correctly."""
         from cio_agent.models import AgentResponse

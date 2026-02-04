@@ -12,6 +12,7 @@ Supports hybrid evaluation:
 - Qualitative questions: Full LLM evaluation
 """
 
+import asyncio
 import json
 import re
 from typing import Any, Optional
@@ -199,7 +200,6 @@ Example output format:
 """
 
         try:
-            import asyncio
             # Run sync LLM call in thread pool to avoid blocking event loop
             raw = await asyncio.to_thread(
                 call_llm,
@@ -271,7 +271,6 @@ Output format:
 """
 
         try:
-            import asyncio
             # Run sync LLM call in thread pool to avoid blocking event loop
             raw = await asyncio.to_thread(
                 call_llm,
@@ -353,7 +352,6 @@ Return JSON:
 """
 
         try:
-            import asyncio
             # Run sync LLM call in thread pool to avoid blocking event loop
             raw = await asyncio.to_thread(
                 call_llm,
