@@ -37,7 +37,7 @@ jobs:
           context: .
           file: Dockerfile.green
           push: true
-          tags: ghcr.io/huixu11/agentbusters-green:latest
+          tags: ghcr.io/yxc20089/agentbusters-green:latest
           platforms: linux/amd64
           no-cache: true
 
@@ -65,6 +65,6 @@ jobs:
           context: .
           file: Dockerfile.purple
           push: true
-          tags: ghcr.io/huixu11/agentbusters-purple:latest
+          tags: ghcr.io/yxc20089/agentbusters-purple:latest
           platforms: linux/amd64
           no-cache: true
