@@ -36,4 +36,4 @@ sampling:
 #   temperature: 0.0
 
 debate: false
-timeout_seconds: 120
+timeout_seconds: 21600

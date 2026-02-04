@@ -63,7 +63,7 @@ datasets:
   - type: crypto
     path: ../agentbusters-eval-data/crypto/eval_hidden
     download_on_missing: false
-    limit: 2
+    limit: 1
     shuffle: false
     weight: 1.0
     stride: 5           # Use every 5th bar (effectively 5-minute bars)

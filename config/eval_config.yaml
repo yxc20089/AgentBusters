@@ -77,4 +77,4 @@ llm_eval:
   temperature: 0.0
 
 debate: false
-timeout_seconds: 300
+timeout_seconds: 21600

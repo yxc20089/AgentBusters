@@ -54,4 +54,4 @@ sampling:
 #   model: gpt-4o-mini
 #   temperature: 0.0
 debate: false  # Whether to conduct adversarial debate
-timeout_seconds: 300  # Timeout per question
+timeout_seconds: 21600  # Timeout per question

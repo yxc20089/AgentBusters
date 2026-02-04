@@ -69,4 +69,4 @@ sampling:
   seed: 42
 
 debate: false
-timeout_seconds: 600
+timeout_seconds: 21600

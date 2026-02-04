@@ -31,4 +31,4 @@ llm_eval:
   model: gpt-4o-mini
   temperature: 0.0
 
-timeout_seconds: 600  # GDPVal tasks may require longer responses
+timeout_seconds: 21600  # GDPVal tasks may require longer responses
