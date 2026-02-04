@@ -37,6 +37,7 @@ except ImportError as e:
 from evaluators.base import BaseDatasetEvaluator, EvalResult
 from evaluators.bizfinbench_evaluator import BizFinBenchEvaluator
 from evaluators.prbench_evaluator import PRBenchEvaluator
+from evaluators.synthetic_evaluator import SyntheticEvaluator
 
 # Build __all__ dynamically
 __all__ = [
@@ -52,6 +53,7 @@ __all__ = [
     "EvalResult",
     "BizFinBenchEvaluator",
     "PRBenchEvaluator",
+    "SyntheticEvaluator",
 ]
 
 # Only export core evaluators if they were successfully imported

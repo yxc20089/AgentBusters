@@ -44,7 +44,7 @@ from cio_agent.crypto_benchmark import CryptoTradingEvaluator, stable_seed
 from cio_agent.data_providers import BizFinBenchProvider, CsvFinanceDatasetProvider
 
 # Dataset-specific evaluators
-from evaluators import BizFinBenchEvaluator, PRBenchEvaluator, OptionsEvaluator
+from evaluators import BizFinBenchEvaluator, PRBenchEvaluator, OptionsEvaluator, SyntheticEvaluator
 from evaluators.gdpval_evaluator import GDPValEvaluator
 from evaluators.llm_utils import build_llm_client, should_use_llm
 
@@ -233,7 +233,12 @@ class GreenAgent:
                     llm_model=self.llm_model,
                     llm_temperature=self.llm_temperature,
                 ),
-                "synthetic": self.evaluator,  # Use ComprehensiveEvaluator
+                "synthetic": SyntheticEvaluator(
+                    use_llm=self.use_llm,
+                    llm_client=self.llm_client,
+                    llm_model=self.llm_model,
+                    llm_temperature=self.llm_temperature,
+                ),
                 "options": None,  # Options use OptionsEvaluator initialized per-task
                 "crypto": None,  # Crypto uses CryptoTradingEvaluator initialized per-scenario
             }
@@ -1145,27 +1150,48 @@ class GreenAgent:
                                 result[key] = eval_result.details.get(key)
                     
                 elif example.dataset_type == "synthetic":
-                    # Synthetic questions use recommendation extraction
-                    extracted = self._extract_recommendation(response)
-                    expected = self._extract_recommendation(example.answer) if example.answer else ""
-
-                    is_correct = extracted.lower() == expected.lower() if expected else False
-
+                    # Synthetic questions: Use rubric-based LLM evaluation
+                    # Extract rubric and ground truth from metadata
+                    rubric = example.metadata.get("rubric") if example.metadata else None
+                    ground_truth_value = example.metadata.get("ground_truth_value") if example.metadata else None
+                    calculation_steps = example.metadata.get("calculation_steps") if example.metadata else None
+                    
+                    eval_result = evaluator.evaluate(
+                        predicted=response,
+                        expected=example.answer or "",
+                        question=example.question,
+                        rubric=rubric,
+                        ground_truth_value=ground_truth_value,
+                        calculation_steps=calculation_steps,
+                        category=example.category,
+                    )
+                    
+                    # Build result dict
                     result = {
                         "example_id": example.example_id,
                         "dataset_type": example.dataset_type,
                         "category": example.category,
                         "question": self._format_question(example.question),
-                        "expected": expected,
-                        "predicted": extracted,
+                        "expected": example.answer[:100] + "..." if example.answer and len(example.answer) > 100 else (example.answer or ""),
+                        "predicted": predicted_text[:200] + "..." if len(predicted_text) > 200 else predicted_text,
                         "predicted_full": predicted_text,
-                        "score": 1.0 if is_correct else 0.0,
-                        "is_correct": is_correct,
-                        "feedback": f"Extracted: {extracted}, Expected: {expected}",
+                        "score": eval_result.score,
+                        "is_correct": eval_result.score >= 0.7,
+                        "feedback": eval_result.feedback,
                     }
-                    result["llm_used"] = False
-                    result["sub_scores"] = {}
-                    eval_result = type('obj', (object,), {'score': result['score']})()
+                    
+                    # Add detailed component scores if available
+                    sub_scores: dict[str, float] = {}
+                    if eval_result.details:
+                        result["llm_used"] = eval_result.details.get("llm_used", False)
+                        if "component_scores" in eval_result.details:
+                            for comp_name, comp_data in eval_result.details["component_scores"].items():
+                                sub_scores[comp_name] = comp_data.get("score", 0.0)
+                        if "llm_raw_output" in eval_result.details:
+                            result["llm_raw_output"] = eval_result.details["llm_raw_output"]
+                    else:
+                        result["llm_used"] = False
+                    result["sub_scores"] = sub_scores
 
                 elif example.dataset_type == "gdpval":
                     # GDPVal: Open-ended professional tasks (LLM-as-judge)
