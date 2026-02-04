@@ -452,8 +452,18 @@ def main():
     # Copy uvicorn config to avoid mutating global state
     log_config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
     if not args.verbose:
-        log_config["loggers"]["uvicorn"]["level"] = "WARNING"
-        log_config["loggers"]["uvicorn.access"]["level"] = "WARNING"
+        # Safely adjust uvicorn log levels (handle potential config structure changes)
+        try:
+            loggers_cfg = log_config.get("loggers", {})
+            uvicorn_logger_cfg = loggers_cfg.get("uvicorn")
+            if isinstance(uvicorn_logger_cfg, dict):
+                uvicorn_logger_cfg["level"] = "WARNING"
+            access_logger_cfg = loggers_cfg.get("uvicorn.access")
+            if isinstance(access_logger_cfg, dict):
+                access_logger_cfg["level"] = "WARNING"
+        except Exception as exc:
+            # If uvicorn's logging config structure changes, avoid failing hard
+            logging.getLogger(__name__).debug("Failed to adjust uvicorn log levels: %s", exc)
     uvicorn.run(server.build(), host=args.host, port=args.port, log_config=log_config)
 
 
