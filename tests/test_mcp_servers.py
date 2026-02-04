@@ -14,6 +14,7 @@ sys.path.insert(0, "src")
 from mcp_servers.sec_edgar import create_edgar_server
 from mcp_servers.yahoo_finance import create_yahoo_finance_server
 from mcp_servers.sandbox import create_sandbox_server
+from mcp_servers.web_search import create_web_search_server
 
 
 class TestMCPServerCreation:
@@ -36,6 +37,12 @@ class TestMCPServerCreation:
         server = create_sandbox_server()
         assert server is not None
         assert server.name == "python-sandbox-mcp"
+
+    def test_web_search_server_creation(self):
+        """Test Web Search server is created correctly."""
+        server = create_web_search_server()
+        assert server is not None
+        assert server.name == "web-search-mcp"
 
     def test_servers_with_temporal_locking(self):
         """Test servers can be created with simulation date for temporal locking."""
@@ -344,3 +351,58 @@ class TestMCPServerIntegration:
             assert current_price > 0
             assert volatility > 0
             assert len(returns) > 0
+
+
+class TestWebSearchServer:
+    """Tests for Web Search MCP server internal function calls."""
+
+    @pytest.mark.asyncio
+    async def test_web_search_server_tools_available(self):
+        """Test that web search server has expected tools."""
+        server = create_web_search_server()
+        tools = await server.get_tools()
+        
+        assert "web_search" in tools
+        assert "search_financial_news" in tools
+        assert "search_earnings_info" in tools
+        assert "search_sec_filings_news" in tools
+
+    @pytest.mark.asyncio
+    async def test_search_financial_news_callable(self):
+        """Test that search_financial_news can be called without FunctionTool error.
+        
+        This tests the fix for: 'FunctionTool' object is not callable
+        The internal _do_web_search function should be called instead of web_search.
+        """
+        server = create_web_search_server()
+        tool = await server.get_tool("search_financial_news")
+        
+        # This should not raise "'FunctionTool' object is not callable"
+        result = tool.fn(company="Apple", max_results=1)
+        
+        # Result should be a SearchResponse object
+        assert hasattr(result, "query")
+        assert hasattr(result, "results")
+        assert hasattr(result, "answer")
+
+    @pytest.mark.asyncio
+    async def test_search_earnings_info_callable(self):
+        """Test that search_earnings_info can be called without FunctionTool error."""
+        server = create_web_search_server()
+        tool = await server.get_tool("search_earnings_info")
+        
+        result = tool.fn(ticker="AAPL")
+        
+        assert hasattr(result, "query")
+        assert "AAPL" in result.query
+
+    @pytest.mark.asyncio
+    async def test_search_sec_filings_news_callable(self):
+        """Test that search_sec_filings_news can be called without FunctionTool error."""
+        server = create_web_search_server()
+        tool = await server.get_tool("search_sec_filings_news")
+        
+        result = tool.fn(ticker="MSFT", filing_type="10-K")
+        
+        assert hasattr(result, "query")
+        assert "MSFT" in result.query

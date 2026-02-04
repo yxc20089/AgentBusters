@@ -8,6 +8,7 @@ Evaluates the quality of options trading responses including:
 - Risk management discipline
 """
 
+import re
 from typing import Any, Optional
 from dataclasses import dataclass
 
@@ -113,7 +114,6 @@ class OptionsEvaluator:
 
     def _extract_numbers_from_text(self, text: str) -> list[float]:
         """Extract all numbers from text."""
-        import re
         # Match numbers including negatives, decimals, percentages
         pattern = r'-?\$?\d+(?:,\d{3})*(?:\.\d+)?%?'
         matches = re.findall(pattern, text)
@@ -168,7 +168,6 @@ class OptionsEvaluator:
                 break
 
         # Extract Greeks using regex patterns
-        import re
 
         # Delta - match both lowercase and capitalized, with various separators
         delta_match = re.search(r'[Dd]elta[:\s=]+(-?\d+\.?\d*)', combined)

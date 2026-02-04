@@ -43,6 +43,23 @@ class PurpleHTTPAgentClient:
             data = resp.json()
 
         analysis = data.get("analysis") or "No analysis returned."
+        
+        # Parse tool calls from response
+        from cio_agent.models import ToolCall
+        raw_tool_calls = data.get("tool_calls", [])
+        tool_calls = []
+        for tc in raw_tool_calls:
+            try:
+                tool_calls.append(ToolCall(
+                    tool_name=tc.get("tool", "unknown"),
+                    params=tc.get("params", {}),
+                    timestamp=datetime.fromisoformat(tc.get("timestamp", datetime.now().isoformat())),
+                    duration_ms=tc.get("elapsed_ms", 0),
+                    success=not tc.get("is_error", False),
+                    result=tc.get("result"),
+                ))
+            except Exception:
+                pass  # Skip malformed tool calls
 
         return AgentResponse(
             agent_id=self.agent_id,
@@ -50,7 +67,7 @@ class PurpleHTTPAgentClient:
             analysis=analysis,
             recommendation=analysis,  # Same as analysis - recommendation field required by model
             extracted_financials=FinancialData(),
-            tool_calls=[],
+            tool_calls=tool_calls,
             code_executions=[],
             timestamp=datetime.now(),
             execution_time_seconds=0.0,

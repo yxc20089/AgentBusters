@@ -1011,6 +1011,7 @@ class GreenAgent:
             
             try:
                 response = ""
+                tool_calls_raw = []  # Initialize tool_calls for this example
                 if example.dataset_type != "crypto":
                     # Build message with reference file URLs for GDPVal
                     # Purple Agent will use fetch_reference_file tool to download files as needed
@@ -1031,6 +1032,8 @@ class GreenAgent:
                         new_conversation=True,
                         timeout=self.eval_config.timeout_seconds if self.eval_config else 300,
                     )
+                    # Get tool calls from the last response
+                    tool_calls_raw = self.messenger.get_last_tool_calls()
                 predicted_text = self._format_predicted(response)
                 
                 # Get appropriate evaluator (options handled specially below)
@@ -1333,6 +1336,10 @@ class GreenAgent:
                         result["rebuttal_preview"] = rebuttal[:100] + "..." if len(rebuttal) > 100 else rebuttal
                     except Exception:
                         result["rebuttal_received"] = False
+                
+                # Add tool_calls if available (only if store_predicted is enabled to save space)
+                if self.store_predicted and tool_calls_raw:
+                    result["tool_calls"] = tool_calls_raw
                 
                 all_results.append(result)
                 

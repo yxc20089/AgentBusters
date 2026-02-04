@@ -35,6 +35,7 @@ from a2a.types import (
     TaskArtifactUpdateEvent,
     Artifact,
     TextPart,
+    DataPart,
     Part,
     Message,
     Role,
@@ -162,15 +163,34 @@ class FinanceAgentExecutor(AgentExecutor):
 
             # Use function calling agentic loop
             analysis = await self._run_with_tools(user_input)
+            
+            # Get tool call log for this request
+            tool_calls_data = self.get_tool_call_log()
 
-            # Create response artifact
+            # Create response artifact with analysis
             artifact = Artifact(
                 artifact_id=uuid4().hex,
                 name="financial_analysis",
                 parts=[Part(root=TextPart(text=analysis))],
             )
+            
+            # Create tool calls artifact (separate for cleaner parsing)
+            if tool_calls_data:
+                tool_calls_artifact = Artifact(
+                    artifact_id=uuid4().hex,
+                    name="tool_calls",
+                    parts=[Part(root=DataPart(data={"tool_calls": tool_calls_data}))],
+                )
+                # Publish tool calls artifact first
+                await event_queue.enqueue_event(
+                    TaskArtifactUpdateEvent(
+                        task_id=task_id,
+                        context_id=context_id,
+                        artifact=tool_calls_artifact,
+                    )
+                )
 
-            # Publish artifact
+            # Publish analysis artifact
             await event_queue.enqueue_event(
                 TaskArtifactUpdateEvent(
                     task_id=task_id,
@@ -245,7 +265,39 @@ class FinanceAgentExecutor(AgentExecutor):
         )
 
     # Maximum tool calls per request to prevent infinite loops
-    MAX_TOOL_CALLS = 15
+    # Can be configured via PURPLE_MAX_TOOL_CALLS environment variable
+    MAX_TOOL_CALLS = int(os.environ.get("PURPLE_MAX_TOOL_CALLS", "25"))
+    
+    def _init_tool_call_log(self):
+        """Initialize tool call log for current request."""
+        self._tool_call_log: list[dict] = []
+    
+    def _log_tool_call(self, tool_name: str, args: dict, result: Any, elapsed_ms: int = 0):
+        """Log a tool call with params and result for later retrieval."""
+        # Truncate large results to avoid memory issues
+        result_str = json.dumps(result, ensure_ascii=False, default=str) if result else ""
+        if len(result_str) > 3000:
+            result_truncated = result_str[:3000] + "...[truncated]"
+        else:
+            result_truncated = result_str
+        
+        # Check if result indicates an error
+        is_error = False
+        if isinstance(result, dict):
+            is_error = "error" in result or result.get("success") is False
+        
+        self._tool_call_log.append({
+            "tool": tool_name,
+            "params": args,
+            "result": result_truncated,
+            "is_error": is_error,
+            "timestamp": datetime.now().isoformat(),
+            "elapsed_ms": elapsed_ms,
+        })
+    
+    def get_tool_call_log(self) -> list[dict]:
+        """Get the tool call log for the current request."""
+        return getattr(self, '_tool_call_log', [])
 
     async def _run_with_tools(self, user_input: str) -> str:
         """
@@ -289,6 +341,7 @@ Provide a comprehensive answer with specific data points."""
         ]
 
         tool_call_count = 0
+        self._init_tool_call_log()  # Initialize tool call log for this request
         logger.info(f"Starting tool loop for question: {user_input[:100]}...")
 
         while tool_call_count < self.MAX_TOOL_CALLS:
@@ -335,14 +388,26 @@ Provide a comprehensive answer with specific data points."""
                             except json.JSONDecodeError:
                                 tool_args = {}
 
-                            logger.info(f"Tool call #{tool_call_count}: {tool_name}({json.dumps(tool_args)[:200]})")
+                            logger.info(f"Tool call #{tool_call_count}: {tool_name}({json.dumps(tool_args, ensure_ascii=False)[:200]})")
 
-                            # Execute the tool
+                            # Execute the tool and measure time
+                            import time as _time
+                            _start = _time.time()
                             tool_result = await self._execute_tool(tool_name, tool_args)
+                            _elapsed_ms = int((_time.time() - _start) * 1000)
+                            
+                            # Record tool call for later retrieval
+                            self._log_tool_call(tool_name, tool_args, tool_result, _elapsed_ms)
 
                             # Log result summary
-                            result_str = json.dumps(tool_result, default=str)
-                            if "error" in result_str.lower():
+                            result_str = json.dumps(tool_result, default=str, ensure_ascii=False)
+                            # Check for actual errors, not just presence of "error" string in JSON keys
+                            has_error = (
+                                (isinstance(tool_result, dict) and tool_result.get("success") is False) or
+                                (isinstance(tool_result, dict) and tool_result.get("error")) or
+                                (isinstance(tool_result, str) and tool_result.startswith("Error:"))
+                            )
+                            if has_error:
                                 logger.warning(f"Tool {tool_name} returned error: {result_str[:500]}")
                             else:
                                 logger.info(f"Tool {tool_name} returned {len(result_str)} chars")
@@ -390,13 +455,25 @@ Provide a comprehensive answer with specific data points."""
                             tool_name = tool_use.name
                             tool_args = tool_use.input
 
-                            logger.info(f"Tool call #{tool_call_count}: {tool_name}({json.dumps(tool_args)[:200]})")
+                            logger.info(f"Tool call #{tool_call_count}: {tool_name}({json.dumps(tool_args, ensure_ascii=False)[:200]})")
 
-                            # Execute the tool
+                            # Execute the tool and measure time
+                            import time as _time
+                            _start = _time.time()
                             tool_result = await self._execute_tool(tool_name, tool_args)
+                            _elapsed_ms = int((_time.time() - _start) * 1000)
+                            
+                            # Record tool call for later retrieval
+                            self._log_tool_call(tool_name, tool_args, tool_result, _elapsed_ms)
 
-                            result_str = json.dumps(tool_result, default=str)
-                            if "error" in result_str.lower():
+                            result_str = json.dumps(tool_result, default=str, ensure_ascii=False)
+                            # Check for actual errors, not just presence of "error" string in JSON keys
+                            has_error = (
+                                (isinstance(tool_result, dict) and tool_result.get("success") is False) or
+                                (isinstance(tool_result, dict) and tool_result.get("error")) or
+                                (isinstance(tool_result, str) and tool_result.startswith("Error:"))
+                            )
+                            if has_error:
                                 logger.warning(f"Tool {tool_name} returned error: {result_str[:500]}")
                             else:
                                 logger.info(f"Tool {tool_name} returned {len(result_str)} chars")

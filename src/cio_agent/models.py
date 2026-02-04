@@ -155,6 +155,7 @@ class ToolCall(BaseModel):
     duration_ms: int = 0
     success: bool = True
     error_message: Optional[str] = None
+    result: Optional[str] = None  # Tool result (may be truncated for large responses)
 
 
 class TemporalViolation(BaseModel):

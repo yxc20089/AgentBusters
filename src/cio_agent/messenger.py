@@ -169,7 +169,7 @@ class Messenger:
         outbound_msg = create_message(text=message, context_id=context_id)
 
         last_event = None
-        outputs = {"response": "", "context_id": None}
+        outputs = {"response": "", "context_id": None, "tool_calls": []}
 
         async for event in client.send_message(outbound_msg):
             last_event = event
@@ -187,7 +187,15 @@ class Messenger:
                     outputs["response"] += merge_parts(msg.parts)
                 if task.artifacts:
                     for artifact in task.artifacts:
-                        outputs["response"] += merge_parts(artifact.parts)
+                        # Check for tool_calls artifact (DataPart with tool_calls key)
+                        if artifact.name == "tool_calls":
+                            for part in artifact.parts:
+                                if isinstance(part.root, DataPart) and part.root.data:
+                                    tool_calls_data = part.root.data.get("tool_calls", [])
+                                    outputs["tool_calls"] = tool_calls_data
+                        else:
+                            # Normal text artifact (analysis response)
+                            outputs["response"] += merge_parts(artifact.parts)
 
             case _:
                 pass
@@ -195,12 +203,19 @@ class Messenger:
         if outputs.get("status", "completed") != "completed":
             raise RuntimeError(f"{url} responded with: {outputs}")
         self._context_ids[url] = outputs.get("context_id", None)
+        
+        # Store tool_calls for retrieval
+        self._last_tool_calls = outputs.get("tool_calls", [])
 
         # Log the response
         resp_preview = outputs["response"][:200] + "..." if len(outputs["response"]) > 200 else outputs["response"]
         logger.info(f"[RESPONSE] From {url}: {resp_preview}")
 
         return outputs["response"]
+    
+    def get_last_tool_calls(self) -> list:
+        """Get tool calls from the last talk_to_agent call."""
+        return getattr(self, '_last_tool_calls', [])
 
     async def close(self):
         """Close the httpx client."""

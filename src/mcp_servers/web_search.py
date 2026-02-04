@@ -61,8 +61,9 @@ def create_web_search_server(
     if TAVILY_AVAILABLE and _api_key:
         _client = TavilyClient(api_key=_api_key)
 
-    @mcp.tool()
-    def web_search(
+    # Internal function for actual search logic (not decorated)
+    # This allows other tool functions to call it without FunctionTool issues
+    def _do_web_search(
         query: str,
         search_depth: str = "basic",
         max_results: int = 5,
@@ -70,20 +71,7 @@ def create_web_search_server(
         include_domains: list[str] | None = None,
         exclude_domains: list[str] | None = None,
     ) -> SearchResponse:
-        """
-        Search the web for information.
-
-        Args:
-            query: Search query string
-            search_depth: "basic" for fast results, "advanced" for comprehensive
-            max_results: Maximum number of results to return (1-10)
-            include_answer: Whether to include AI-generated answer summary
-            include_domains: Only include results from these domains
-            exclude_domains: Exclude results from these domains
-
-        Returns:
-            SearchResponse with results and optional answer
-        """
+        """Internal search implementation."""
         if not TAVILY_AVAILABLE:
             return SearchResponse(
                 query=query,
@@ -138,6 +126,38 @@ def create_web_search_server(
             )
 
     @mcp.tool()
+    def web_search(
+        query: str,
+        search_depth: str = "basic",
+        max_results: int = 5,
+        include_answer: bool = True,
+        include_domains: list[str] | None = None,
+        exclude_domains: list[str] | None = None,
+    ) -> SearchResponse:
+        """
+        Search the web for information.
+
+        Args:
+            query: Search query string
+            search_depth: "basic" for fast results, "advanced" for comprehensive
+            max_results: Maximum number of results to return (1-10)
+            include_answer: Whether to include AI-generated answer summary
+            include_domains: Only include results from these domains
+            exclude_domains: Exclude results from these domains
+
+        Returns:
+            SearchResponse with results and optional answer
+        """
+        return _do_web_search(
+            query=query,
+            search_depth=search_depth,
+            max_results=max_results,
+            include_answer=include_answer,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+        )
+
+    @mcp.tool()
     def search_financial_news(
         company: str,
         topic: str = "",
@@ -177,7 +197,7 @@ def create_web_search_server(
             "investors.com",
         ]
 
-        return web_search(
+        return _do_web_search(
             query=query,
             search_depth="advanced",
             max_results=max_results,
@@ -211,7 +231,7 @@ def create_web_search_server(
 
         query = " ".join(query_parts)
 
-        return web_search(
+        return _do_web_search(
             query=query,
             search_depth="advanced",
             max_results=5,
@@ -240,7 +260,7 @@ def create_web_search_server(
 
         query = " ".join(query_parts)
 
-        return web_search(
+        return _do_web_search(
             query=query,
             search_depth="basic",
             max_results=5,

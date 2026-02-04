@@ -48,6 +48,9 @@ def serve(
     simulation_date: Optional[str] = typer.Option(
         None, "--simulation-date", "-d", help="Simulation date (YYYY-MM-DD)"
     ),
+    log_file: Optional[str] = typer.Option(
+        None, "--log-file", "-l", help="Log file path (logs to both file and console)"
+    ),
 ):
     """
     Start the Purple Agent A2A server.
@@ -57,6 +60,24 @@ def serve(
     """
     from purple_agent.server import create_app
     import uvicorn
+    import logging as _logging
+
+    # Configure logging to file if specified
+    if log_file:
+        # Set up file handler
+        file_handler = _logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setFormatter(_logging.Formatter('%(asctime)s [%(name)s] %(levelname)s: %(message)s'))
+        file_handler.setLevel(_logging.INFO)
+        
+        # Add file handler to root logger and purple_agent loggers
+        root_logger = _logging.getLogger()
+        root_logger.addHandler(file_handler)
+        
+        # Also capture uvicorn logs
+        for logger_name in ['uvicorn', 'uvicorn.access', 'uvicorn.error', 'purple_agent', 'purple_agent.executor']:
+            _logging.getLogger(logger_name).addHandler(file_handler)
+        
+        console.print(f"[dim]Logging to: {log_file}[/dim]")
 
     # Parse simulation date
     sim_date = None

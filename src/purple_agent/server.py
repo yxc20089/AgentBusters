@@ -197,11 +197,20 @@ def create_app(
                 task_info=task_info,
                 financial_data=financial_data,
             )
+            
+            # Get tool calls from executor (includes params and results)
+            tool_calls = executor.get_tool_call_log()
+            metrics = executor.toolkit.get_metrics()
+            
+            # Reset toolkit metrics for next request
+            executor.toolkit.reset_metrics()
 
             return {
                 "analysis": analysis,
                 "task_info": task_info,
                 "tickers_analyzed": list(financial_data.get("tickers", {}).keys()),
+                "tool_calls": tool_calls,
+                "metrics": metrics,
             }
 
         except Exception as e:

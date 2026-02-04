@@ -543,7 +543,7 @@ def create_options_chain_server(
             return {"error": str(e), "ticker": ticker}
 
     @mcp.tool()
-    def get_volatility_analysis(ticker: str) -> dict[str, Any]:
+    def get_volatility_analysis(ticker: str, lookback_days: int = 30) -> dict[str, Any]:
         """
         Get volatility analysis for a ticker.
 
@@ -551,6 +551,7 @@ def create_options_chain_server(
 
         Args:
             ticker: Stock ticker symbol
+            lookback_days: Number of days for historical volatility calculation (default: 30)
 
         Returns:
             Volatility metrics including HV and IV
@@ -566,6 +567,7 @@ def create_options_chain_server(
             prices = hist["Close"].tolist()
 
             # Calculate historical volatility at different windows
+            hv_custom = calculate_historical_volatility(prices, lookback_days) if len(prices) > lookback_days else None
             hv_20 = calculate_historical_volatility(prices, 20)
             hv_60 = calculate_historical_volatility(prices, 60)
             hv_252 = calculate_historical_volatility(prices, 252) if len(prices) >= 253 else hv_60
@@ -589,7 +591,7 @@ def create_options_chain_server(
             except:
                 pass
 
-            return VolatilityData(
+            result = VolatilityData(
                 ticker=ticker,
                 current_iv=round(current_iv, 4) if current_iv else None,
                 historical_volatility_20d=round(hv_20, 4),
@@ -598,6 +600,12 @@ def create_options_chain_server(
                 iv_percentile=None,  # Would need historical IV data
                 iv_rank=None,
             ).model_dump()
+            
+            # Add custom lookback period volatility
+            if hv_custom is not None:
+                result[f"historical_volatility_{lookback_days}d"] = round(hv_custom, 4)
+            
+            return result
 
         except Exception as e:
             return {"error": str(e), "ticker": ticker}

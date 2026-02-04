@@ -6,6 +6,46 @@ import pytest
 from evaluators.base import EvalResult
 from evaluators.bizfinbench_evaluator import BizFinBenchEvaluator
 from evaluators.prbench_evaluator import PRBenchEvaluator
+from evaluators.options import OptionsEvaluator, OptionsScore
+
+
+class TestOptionsEvaluatorImport:
+    """Test OptionsEvaluator import and basic functionality.
+    
+    This tests the fix for: name 're' is not defined
+    The import re was moved to the top of the file.
+    """
+
+    def test_options_evaluator_import(self):
+        """Test that OptionsEvaluator can be imported without errors."""
+        # This import should not raise "name 're' is not defined"
+        from evaluators.options import OptionsEvaluator
+        assert OptionsEvaluator is not None
+
+    def test_options_evaluator_extract_numbers(self):
+        """Test that _extract_numbers_from_text works (uses re module)."""
+        from evaluators.options import OptionsEvaluator
+        from cio_agent.models import Task, GroundTruth, TaskCategory, TaskRubric
+        from datetime import datetime, timezone
+        
+        # Create a minimal task for the evaluator
+        task = Task(
+            question_id="test_001",
+            category=TaskCategory.OPTIONS_PRICING,
+            question="Test question",
+            ticker="AAPL",
+            fiscal_year=2024,
+            simulation_date=datetime.now(timezone.utc),
+            ground_truth=GroundTruth(macro_thesis="test"),
+            rubric=TaskRubric(),
+        )
+        
+        evaluator = OptionsEvaluator(task=task)
+        
+        # Test that _extract_numbers_from_text works (uses re.findall)
+        numbers = evaluator._extract_numbers_from_text("Price is $150.50 with delta 0.45")
+        assert 150.50 in numbers
+        assert 0.45 in numbers
 
 
 class TestEvalResult:

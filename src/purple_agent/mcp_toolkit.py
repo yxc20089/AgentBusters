@@ -145,15 +145,31 @@ class MCPToolkit:
             "risk_metrics": risk_metrics_tools,
         }
 
-    def _record_call(self, server: str, tool: str, result: Any, time_ms: int = 0):
-        """Record a tool call for metrics."""
+    def _record_call(self, server: str, tool: str, result: Any, time_ms: int = 0, params: dict = None):
+        """Record a tool call for metrics, including parameters and results."""
         self._metrics.tool_calls += 1
         self._metrics.total_time_ms += time_ms
         key = f"{server}:{tool}"
         self._metrics.calls_by_tool[key] = self._metrics.calls_by_tool.get(key, 0) + 1
+        
+        # Truncate large results to avoid bloating storage
+        result_str = json.dumps(result, ensure_ascii=False, default=str) if result else ""
+        if len(result_str) > 2000:
+            result_truncated = result_str[:2000] + "...[truncated]"
+        else:
+            result_truncated = result_str
+        
+        # Check if result indicates an error
+        is_error = False
+        if isinstance(result, dict):
+            is_error = "error" in result or result.get("success") == False
+        
         self._tool_calls.append({
             "server": server,
             "tool": tool,
+            "params": params or {},
+            "result": result_truncated,
+            "is_error": is_error,
             "timestamp": datetime.now().isoformat(),
             "time_ms": time_ms,
         })
@@ -187,7 +203,7 @@ class MCPToolkit:
 
         elapsed = int((time.time() - start) * 1000)
 
-        self._record_call("yfinance", "get_quote", result, elapsed)
+        self._record_call("yfinance", "get_quote", result, elapsed, params={"ticker": ticker})
         return result
 
     async def get_historical_prices(
@@ -212,7 +228,7 @@ class MCPToolkit:
         result = await _call_tool(self._yfinance_server, "get_historical_prices", {"ticker": ticker, "period": period, "interval": interval})
         elapsed = int((time.time() - start) * 1000)
 
-        self._record_call("yfinance", "get_historical_prices", result, elapsed)
+        self._record_call("yfinance", "get_historical_prices", result, elapsed, params={"ticker": ticker, "period": period, "interval": interval})
         return result
 
     async def get_financials(
