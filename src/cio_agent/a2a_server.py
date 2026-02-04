@@ -166,6 +166,27 @@ def main():
         type=int,
         help="Maximum characters for predicted outputs when truncation is enabled"
     )
+    parser.add_argument(
+        "--store-question",
+        action="store_true",
+        help="Store full question text in evaluation results"
+    )
+    question_trunc_group = parser.add_mutually_exclusive_group()
+    question_trunc_group.add_argument(
+        "--truncate-question",
+        action="store_true",
+        help="Truncate question text in evaluation results (default)"
+    )
+    question_trunc_group.add_argument(
+        "--no-truncate-question",
+        action="store_true",
+        help="Do not truncate question text in evaluation results"
+    )
+    parser.add_argument(
+        "--question-max-chars",
+        type=int,
+        help="Maximum characters for question text when truncation is enabled (default: 200)"
+    )
     args = parser.parse_args()
 
     # Validate configuration
@@ -201,6 +222,12 @@ def main():
         truncate_predicted = True
     elif args.no_truncate_predicted:
         truncate_predicted = False
+
+    truncate_question = None
+    if args.truncate_question:
+        truncate_question = True
+    elif args.no_truncate_question:
+        truncate_question = False
 
     # Load synthetic questions if provided (legacy mode)
     synthetic_questions = None
@@ -310,6 +337,9 @@ def main():
             store_predicted=args.store_predicted,
             truncate_predicted=truncate_predicted,
             predicted_max_chars=args.predicted_max_chars,
+            store_question=args.store_question,
+            truncate_question=truncate_question,
+            question_max_chars=args.question_max_chars,
         ),
         task_store=task_store,
     )
