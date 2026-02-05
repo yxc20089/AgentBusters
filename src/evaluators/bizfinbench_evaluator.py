@@ -9,6 +9,7 @@ evaluation strategies:
 - Open-ended tasks: LLM-based judgment
 """
 
+import json
 import logging
 import re
 from typing import Any, Optional
@@ -52,6 +53,7 @@ class BizFinBenchEvaluator(BaseDatasetEvaluator):
         "event_logic_reasoning",
         "user_sentiment_analysis",
         "stock_price_predict",
+        "financial_data_description",
     }
     
     def __init__(
@@ -129,6 +131,8 @@ class BizFinBenchEvaluator(BaseDatasetEvaluator):
             result = self._eval_classification(predicted, expected)
         elif task_type == "stock_price_predict":
             result = self._eval_numerical(predicted, expected)
+        elif task_type == "financial_data_description":
+            result = self._eval_json_list_match(predicted, expected)
         elif task_type == "conterfactual":
             result = self._eval_normalized_match(predicted, expected)
         else:
@@ -219,6 +223,8 @@ Rules:
 - For event_logic_reasoning, the answer must match the expected ordered sequence (ignore whitespace and
   formatting differences).
 - For user_sentiment_analysis, the label/sentiment must match.
+- For financial_data_description, compare the list of erroneous description IDs as sets (order does not matter).
+  The answer is correct only if both lists contain exactly the same IDs.
 - For other tasks, require semantic equivalence of key facts. Do not give credit for partially correct answers.
 
 Return JSON only:
@@ -419,6 +425,69 @@ Return JSON only:
             }
         )
     
+    def _eval_json_list_match(self, predicted: str, expected: str) -> EvalResult:
+        """
+        Evaluate by comparing lists of IDs (e.g. erroneous description IDs).
+
+        Parses both predicted and expected as JSON to extract integer lists,
+        then compares as sets. Falls back to regex extraction of number lists.
+        """
+        pred_ids = self._extract_id_list(predicted)
+        exp_ids = self._extract_id_list(expected)
+
+        is_correct = set(pred_ids) == set(exp_ids)
+
+        return EvalResult(
+            score=1.0 if is_correct else 0.0,
+            correct_count=1 if is_correct else 0,
+            total_count=1,
+            feedback=f"Predicted IDs: {sorted(pred_ids)}, Expected IDs: {sorted(exp_ids)}",
+            details={
+                "predicted_ids": sorted(pred_ids),
+                "expected_ids": sorted(exp_ids),
+                "is_correct": is_correct,
+            }
+        )
+
+    def _extract_id_list(self, text: str) -> list[int]:
+        """Extract a list of integer IDs from text.
+
+        Tries JSON parsing first (handles ``{"answer": [1,3]}`` and bare
+        ``[1,3]``), then falls back to regex extraction of bracketed number
+        lists.
+        """
+        # Try JSON object with "answer" key
+        try:
+            data = json.loads(text.strip())
+            if isinstance(data, dict):
+                val = data.get("answer", data.get("Answer", []))
+                if isinstance(val, list):
+                    return [int(v) for v in val]
+            if isinstance(data, list):
+                return [int(v) for v in data]
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+
+        # Try extracting JSON from within longer text
+        json_match = re.search(r'\{[^{}]*"answer"\s*:\s*\[([^\]]*)\][^{}]*\}', text, re.IGNORECASE)
+        if json_match:
+            try:
+                nums = json_match.group(1)
+                return [int(x.strip()) for x in nums.split(",") if x.strip()]
+            except ValueError:
+                pass
+
+        # Fallback: extract bracketed list like [1, 3, 7]
+        bracket_match = re.search(r'\[([^\]]*)\]', text)
+        if bracket_match:
+            try:
+                items = bracket_match.group(1).split(",")
+                return [int(x.strip()) for x in items if x.strip()]
+            except ValueError:
+                pass
+
+        return []
+
     def _eval_normalized_match(self, predicted: str, expected: str) -> EvalResult:
         """
         Evaluate with normalized string matching.

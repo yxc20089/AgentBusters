@@ -315,12 +315,14 @@ class GreenAgent:
         conduct_debate = config.get("conduct_debate", os.environ.get("EVAL_CONDUCT_DEBATE", "false"))
         if isinstance(conduct_debate, str):
             conduct_debate = conduct_debate.lower() == "true"
+        model_id = config.get("model_id", "")
 
         await self._run_evaluation(
             purple_agent_url=purple_agent_url,
             num_tasks=num_tasks,
             conduct_debate=conduct_debate,
             updater=updater,
+            model_id=model_id,
         )
 
     async def run(self, message: Message, updater: TaskUpdater) -> None:
@@ -351,6 +353,7 @@ class GreenAgent:
         num_tasks: int,
         conduct_debate: bool,
         updater: TaskUpdater,
+        model_id: str = "",
     ) -> None:
         """
         Internal method to run the actual evaluation.
@@ -360,6 +363,7 @@ class GreenAgent:
             num_tasks: Number of tasks to evaluate
             conduct_debate: Whether to conduct adversarial debate
             updater: TaskUpdater for reporting progress and results
+            model_id: Identifier for the Purple Agent model (used in crypto seed)
         """
         ticker = os.environ.get("EVAL_TICKER", "NVDA")
 
@@ -400,6 +404,7 @@ class GreenAgent:
                     num_tasks=num_tasks,
                     conduct_debate=conduct_debate,
                     updater=updater,
+                    model_id=model_id,
                 )
 
                 # Use unified scoring system
@@ -1068,15 +1073,17 @@ class GreenAgent:
         num_tasks: int,
         conduct_debate: bool,
         updater: TaskUpdater,
+        model_id: str = "",
     ) -> List[dict]:
         """
         Evaluate Purple Agent using config-based multi-dataset loader.
-        
+
         Args:
             purple_agent_url: URL of the Purple Agent to evaluate
             num_tasks: Maximum number of examples to evaluate
             conduct_debate: Whether to conduct adversarial debate
             updater: TaskUpdater for progress reporting
+            model_id: Identifier for the Purple Agent model (used in crypto seed)
             
         Returns:
             List of evaluation results
@@ -1377,7 +1384,8 @@ class GreenAgent:
                         )
 
                     scenario_meta = example.metadata or {}
-                    scenario_seed_base = os.environ.get("AGENTBEATS_PURPLE_AGENT_ID") or purple_agent_url
+                    purple_id = model_id or os.environ.get("AGENTBEATS_PURPLE_AGENT_ID") or ""
+                    scenario_seed_base = f"{purple_agent_url}|{purple_id}" if purple_id else purple_agent_url
                     scenario_seed = scenario_meta.get("seed")
                     if scenario_seed is None:
                         scenario_seed = stable_seed(scenario_seed_base, example.example_id)
@@ -1415,6 +1423,8 @@ class GreenAgent:
                             "noisy_score": crypto_result["noisy"]["score"],
                             "adversarial_score": crypto_result["adversarial"]["score"],
                             "meta_score": crypto_result["meta"]["score"],
+                            "buyhold_score": crypto_result["buyhold"]["score"],
+                            "buyhold_metrics": crypto_result["buyhold"]["metrics"],
                             "grade": crypto_result["grade"],
                             "random_seed": crypto_result["random_seed"],
                             "metrics": {
