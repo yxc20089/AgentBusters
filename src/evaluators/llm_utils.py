@@ -9,6 +9,7 @@ Supports per-evaluator LLM configuration via EvaluatorLLMConfig.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -369,8 +370,6 @@ def call_llm(
     - Same model + same prompt → reproducible results (same seed)
     - Different models + same prompt → bypasses OpenRouter cache (different seeds)
     """
-    import hashlib
-    
     model = model or get_llm_model()
     
     # Generate a fixed seed based on model name for cache bypass + reproducibility
@@ -410,6 +409,7 @@ def call_llm(
         return response.choices[0].message.content or ""
 
     if hasattr(client, "messages"):
+        # Anthropic Claude API does not support 'seed' parameter for deterministic outputs
         response = client.messages.create(
             model=model,
             max_tokens=max_tokens,
