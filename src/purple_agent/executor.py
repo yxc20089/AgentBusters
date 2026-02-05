@@ -103,6 +103,8 @@ class FinanceAgentExecutor(AgentExecutor):
         # Reasoning effort for extended thinking (o1/o3/gpt-5 style models)
         # Options: "off", "low", "medium", "high"
         reasoning_env = os.getenv("PURPLE_REASONING_EFFORT", "high").lower()
+        if reasoning_env not in {"off", "low", "medium", "high"}:
+            reasoning_env = "medium"  # Fallback to medium for invalid values
         self.reasoning_effort = None if reasoning_env == "off" else reasoning_env
 
         # Always use in-process MCP servers for controlled environment
@@ -790,8 +792,7 @@ Respond with ONLY this JSON format:
                             messages=[{"role": "user", "content": prompt}],
                             temperature=self.temperature,
                             max_tokens=200,
-                            **({
-                                "extra_body": extra_body} if extra_body else {}),
+                            **({"extra_body": extra_body} if extra_body else {}),
                         )
                     )
                     llm_response = response.choices[0].message.content.strip()
@@ -1276,8 +1277,7 @@ Respond with ONLY the task type (e.g., "options_pricing"). Nothing else."""
                             {"role": "user", "content": user_prompt},
                         ],
                         temperature=self.temperature,
-                        **({
-                            "extra_body": extra_body} if extra_body else {}),
+                        **({"extra_body": extra_body} if extra_body else {}),
                     )
                 )
                 return response.choices[0].message.content
