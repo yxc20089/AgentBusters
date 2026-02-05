@@ -31,10 +31,10 @@ DEFAULT_SCORE_WEIGHTS = {
 }
 
 DEFAULT_METRIC_WEIGHTS = {
-    "sharpe": 0.50,
-    "total_return": 0.25,
+    "sharpe": 0.30,
+    "total_return": 0.35,
     "max_drawdown": 0.15,
-    "win_rate": 0.10,
+    "win_rate": 0.20,
 }
 
 
@@ -56,7 +56,7 @@ class CryptoEvaluationConfig(BaseModel):
         default_factory=lambda: ["identity", "scale_1_1", "invert_returns"]
     )
     return_cap: float = 0.50
-    sharpe_floor: float = -1.0
+    sharpe_floor: float = -3.0
     sharpe_cap: float = 3.0
     drawdown_cap: float = 0.50
     win_rate_floor: float = 0.30
@@ -1462,6 +1462,51 @@ class CryptoTradingEvaluator:
             "win_rate": win_rate,
         }
 
+    def _compute_buyhold_metrics(
+        self,
+        states: List[dict],
+        timeframe: Optional[str],
+    ) -> dict[str, float]:
+        """Compute metrics for a buy-and-hold strategy as a reference baseline."""
+        closes = []
+        for s in states:
+            c = float(s.get("ohlcv", {}).get("close", 0))
+            if c > 0:
+                closes.append(c)
+        if len(closes) < 2:
+            return {"total_return": 0.0, "max_drawdown": 0.0, "sharpe": 0.0, "win_rate": 0.0}
+
+        first = closes[0]
+        equity_curve = [c / first for c in closes]  # normalised to 1.0
+        total_return = (closes[-1] - first) / first
+
+        peak = equity_curve[0]
+        max_drawdown = 0.0
+        returns = []
+        for i, eq in enumerate(equity_curve):
+            if eq > peak:
+                peak = eq
+            dd = (peak - eq) / peak if peak > 0 else 0.0
+            max_drawdown = max(max_drawdown, dd)
+            if i > 0 and equity_curve[i - 1] > 0:
+                returns.append((eq - equity_curve[i - 1]) / equity_curve[i - 1])
+
+        sharpe = 0.0
+        if len(returns) > 1:
+            mean_ret = statistics.mean(returns)
+            std_ret = statistics.pstdev(returns)
+            if std_ret > 0:
+                sharpe = (mean_ret / std_ret) * _annualization_factor(timeframe)
+
+        win_rate = 1.0 if total_return > 0 else 0.0
+
+        return {
+            "total_return": total_return,
+            "max_drawdown": max_drawdown,
+            "sharpe": sharpe,
+            "win_rate": win_rate,
+        }
+
     async def evaluate_scenario(
         self,
         scenario_meta: dict[str, Any],
@@ -1472,6 +1517,11 @@ class CryptoTradingEvaluator:
         max_steps = scenario_meta.get("max_steps")
         stride = scenario_meta.get("stride", 1)
         timeframe = scenario_meta.get("metadata", {}).get("timeframe")
+        # Adjust timeframe for stride so annualization uses the effective bar interval
+        if stride > 1 and timeframe:
+            base_minutes = _parse_timeframe_minutes(timeframe)
+            if base_minutes:
+                timeframe = f"{base_minutes * stride}m"
         config = CryptoEvaluationConfig.model_validate(scenario_meta.get("evaluation", {}))
 
         # Support inline market_states (from PostgreSQL mode) or file-based loading
@@ -1491,6 +1541,10 @@ class CryptoTradingEvaluator:
 
         if config.seed is not None:
             seed = config.seed
+
+        # Compute buy-and-hold reference baseline
+        buyhold_metrics = self._compute_buyhold_metrics(states, timeframe)
+        buyhold_score = self._score_metrics(buyhold_metrics, config)
 
         baseline = await self._run_episode(
             states=states,
@@ -1570,6 +1624,10 @@ class CryptoTradingEvaluator:
                 "average": meta_avg,
                 "dispersion": meta_std,
                 "details": meta_details,
+            },
+            "buyhold": {
+                "score": buyhold_score,
+                "metrics": buyhold_metrics,
             },
             "final_score": round(final_score, 2),
             "grade": self._grade(final_score),

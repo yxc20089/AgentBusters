@@ -396,7 +396,7 @@ class TestCryptoDatasetConfig:
         assert config.initial_balance == 20000
         assert config.max_leverage == 2.0
         assert config.decision_interval == 5
-        assert config.metric_weights["sharpe"] == 0.50  # Default
+        assert config.metric_weights["sharpe"] == 0.30  # Default (rebalanced)
 
 
 class TestDecisionParsing:

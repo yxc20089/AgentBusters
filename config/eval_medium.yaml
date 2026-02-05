@@ -72,10 +72,10 @@ datasets:
         adversarial: 0.20
         meta: 0.10
       metric_weights:
-        sharpe: 0.50
-        total_return: 0.25
+        sharpe: 0.30
+        total_return: 0.35
         max_drawdown: 0.15
-        win_rate: 0.10
+        win_rate: 0.20
       meta_transforms:
         - identity
         - scale_1_1
