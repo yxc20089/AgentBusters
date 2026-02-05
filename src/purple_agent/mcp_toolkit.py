@@ -38,6 +38,10 @@ async def _call_tool(server, tool_name: str, arguments: dict):
     FastMCP 2.14+ uses get_tool() to retrieve a FunctionTool,
     then call tool.fn(**arguments) to execute it.
     """
+    if server is None:
+        return {"error": f"MCP server not available for tool: {tool_name}"}
+    if not hasattr(server, 'get_tool'):
+        return {"error": f"Server object does not have get_tool method. Type: {type(server).__name__}"}
     tool = await server.get_tool(tool_name)
     result = tool.fn(**arguments)
     return result
