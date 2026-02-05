@@ -95,7 +95,7 @@ sampling:
 
 llm_eval:
   enabled: true
-  model: gpt-4o-mini
+  model: gpt-5.2-2025-12-11
   api_base: https://api.openai.com/v1
   api_key: ${OPENAI_EVAL_API_KEY}
   temperature: 0.0
