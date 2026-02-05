@@ -397,8 +397,12 @@ def call_llm(
 
     if hasattr(client, "chat"):
         messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
+        # Inject model-based nonce into system prompt to bypass OpenRouter cache.
+        # Different models get different prompts, defeating prompt-based caching,
+        # while same model gets same nonce for reproducibility.
+        cache_bypass_nonce = f"[model:{model}]"
+        effective_system = f"{cache_bypass_nonce}\n{system_prompt}" if system_prompt else cache_bypass_nonce
+        messages.append({"role": "system", "content": effective_system})
         messages.append({"role": "user", "content": prompt})
         response = client.chat.completions.create(
             model=model,
@@ -407,9 +411,6 @@ def call_llm(
             top_p=1,  # Explicit deterministic sampling
             max_tokens=max_tokens,
             seed=model_seed,  # Model-based seed for reproducibility
-            extra_headers={
-                "X-No-Cache": "true",  # Disable OpenRouter caching
-            },
         )
         return response.choices[0].message.content or ""
 
