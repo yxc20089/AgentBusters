@@ -319,6 +319,7 @@ start_green_agent() {
         --port "$GREEN_PORT" \
         --eval-config "$EVAL_CONFIG" \
         --store-predicted \
+        --no-truncate-predicted \
         --store-question \
         --store-expected \
         > "$LOG_DIR/green_${model_id}.log" 2>&1 &
