@@ -2,7 +2,7 @@
 # =============================================================================
 # AgentBusters — Run 50-task FAB++ evaluation across multiple models
 # =============================================================================
-# Usage: bash scripts/run_all_models.sh [--models MODEL1,MODEL2,...] [--skip-setup]
+# Usage: bash scripts/run_all_models.sh [--models MODEL1,MODEL2,...] [--max-retries N] [--skip-setup]
 #
 # Prerequisites:
 #   - vLLM installed (pip install vllm)
@@ -39,9 +39,11 @@ NUM_TASKS=50
 EVAL_CONFIG="config/eval_medium.yaml"
 TIMEOUT=21600
 RESULTS_DIR="results"
+MAX_RETRIES=3
 
-# Logging
+# Logging & checkpoints
 LOG_DIR="logs"
+CHECKPOINT_FILE="${RESULTS_DIR}/.checkpoint.json"
 mkdir -p "$RESULTS_DIR" "$LOG_DIR"
 
 # PID tracking
@@ -114,6 +116,62 @@ DEFAULT_ORDER="qwen3-8b gpt-oss-20b gemma3-27b qwen3-30b-a3b glm-4.7-flash qwen3
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 err() { log "ERROR: $*" >&2; }
+
+# ========================== Checkpoint Functions ==============================
+
+checkpoint_status() {
+    # Usage: checkpoint_status <model_id> → prints "completed", "failed", or ""
+    local model_id="$1"
+    if [ -f "$CHECKPOINT_FILE" ]; then
+        python3 -c "
+import json, sys
+with open('$CHECKPOINT_FILE') as f: data = json.load(f)
+entry = data.get('models', {}).get('$model_id', {})
+print(entry.get('status', ''))
+" 2>/dev/null
+    fi
+}
+
+checkpoint_update() {
+    # Usage: checkpoint_update <model_id> <status> [attempt] [elapsed_s] [error_msg]
+    local model_id="$1" status="$2"
+    local attempt="${3:-0}" elapsed="${4:-0}" error_msg="${5:-}"
+    python3 -c "
+import json, os, time
+path = '$CHECKPOINT_FILE'
+data = {}
+if os.path.exists(path):
+    with open(path) as f:
+        data = json.load(f)
+data.setdefault('models', {})
+data['models']['$model_id'] = {
+    'status': '$status',
+    'attempt': $attempt,
+    'elapsed_seconds': $elapsed,
+    'timestamp': time.strftime('%Y-%m-%dT%H:%M:%S'),
+    'error': '''$error_msg''' if '$error_msg' else None,
+    'result_file': 'results/eval_medium_${model_id}.json' if '$status' == 'completed' else None
+}
+data['last_updated'] = time.strftime('%Y-%m-%dT%H:%M:%S')
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+"
+}
+
+checkpoint_summary() {
+    if [ -f "$CHECKPOINT_FILE" ]; then
+        python3 -c "
+import json
+with open('$CHECKPOINT_FILE') as f: data = json.load(f)
+models = data.get('models', {})
+completed = [m for m, v in models.items() if v['status'] == 'completed']
+failed = [m for m, v in models.items() if v['status'] == 'failed']
+print(f'Checkpoint: {len(completed)} completed, {len(failed)} failed')
+if completed: print(f'  Completed: {\" \".join(completed)}')
+if failed: print(f'  Failed: {\" \".join(failed)}')
+"
+    fi
+}
 
 cleanup() {
     log "Cleaning up processes..."
@@ -274,6 +332,10 @@ while [ $# -gt 0 ]; do
             MODELS="${2//,/ }"
             shift 2
             ;;
+        --max-retries)
+            MAX_RETRIES="$2"
+            shift 2
+            ;;
         --skip-setup)
             shift
             ;;
@@ -293,13 +355,57 @@ log "Models: $MODELS"
 log "Tasks per model: $NUM_TASKS"
 log "Config: $EVAL_CONFIG"
 log "Results dir: $RESULTS_DIR"
+log "Max retries: $MAX_RETRIES"
+log "Checkpoint: $CHECKPOINT_FILE"
 log ""
+
+# Show existing checkpoint state if resuming
+checkpoint_summary
 
 TOTAL_MODELS=$(echo "$MODELS" | wc -w)
 CURRENT=0
 SUCCEEDED=0
 FAILED=0
+SKIPPED=0
 FAILED_LIST=""
+
+run_model_eval() {
+    # Run a single model evaluation (vLLM + Purple + Green + eval).
+    # Returns 0 on success, 1 on failure.
+    local model_id="$1"
+
+    cleanup  # Kill any leftover processes
+
+    # Step 1: Start vLLM
+    if ! start_vllm "$model_id"; then
+        err "Could not start vLLM for $model_id"
+        cleanup
+        return 1
+    fi
+
+    # Step 2: Start Purple Agent
+    if ! start_purple_agent "$model_id"; then
+        err "Could not start Purple Agent for $model_id"
+        cleanup
+        return 1
+    fi
+
+    # Step 3: Start Green Agent
+    if ! start_green_agent "$model_id"; then
+        err "Could not start Green Agent for $model_id"
+        cleanup
+        return 1
+    fi
+
+    # Step 4: Run evaluation
+    if run_eval "$model_id"; then
+        cleanup
+        return 0
+    else
+        cleanup
+        return 1
+    fi
+}
 
 for model_id in $MODELS; do
     CURRENT=$((CURRENT + 1))
@@ -310,61 +416,63 @@ for model_id in $MODELS; do
     log "  Parser: ${MODEL_PARSER[$model_id]}"
     log "=========================================="
 
-    # Skip if result already exists
+    # --- Checkpoint: skip if already completed ---
+    ckpt_status=$(checkpoint_status "$model_id")
+    if [ "$ckpt_status" = "completed" ]; then
+        log "SKIP (checkpoint): $model_id already completed"
+        SUCCEEDED=$((SUCCEEDED + 1))
+        SKIPPED=$((SKIPPED + 1))
+        continue
+    fi
+
+    # Also skip if result file already exists and is large enough
     if [ -f "${RESULTS_DIR}/eval_medium_${model_id}.json" ]; then
         local_size=$(stat -c%s "${RESULTS_DIR}/eval_medium_${model_id}.json" 2>/dev/null || stat -f%z "${RESULTS_DIR}/eval_medium_${model_id}.json" 2>/dev/null || echo "0")
         if [ "$local_size" -gt 1000 ]; then
-            log "SKIP: Result already exists (${local_size} bytes)"
+            log "SKIP: Result file exists (${local_size} bytes)"
+            checkpoint_update "$model_id" "completed" 0 0
             SUCCEEDED=$((SUCCEEDED + 1))
+            SKIPPED=$((SKIPPED + 1))
             continue
         fi
     fi
 
-    START_TIME=$(date +%s)
-    cleanup  # Kill any leftover processes
+    # --- Retry loop ---
+    MODEL_SUCCESS=false
+    for attempt in $(seq 1 "$MAX_RETRIES"); do
+        log "--- Attempt $attempt/$MAX_RETRIES for $model_id ---"
+        checkpoint_update "$model_id" "in_progress" "$attempt"
 
-    # Step 1: Start vLLM
-    if ! start_vllm "$model_id"; then
-        err "FAILED: Could not start vLLM for $model_id"
-        FAILED=$((FAILED + 1))
-        FAILED_LIST="$FAILED_LIST $model_id"
-        cleanup
-        continue
-    fi
+        START_TIME=$(date +%s)
 
-    # Step 2: Start Purple Agent
-    if ! start_purple_agent "$model_id"; then
-        err "FAILED: Could not start Purple Agent for $model_id"
-        FAILED=$((FAILED + 1))
-        FAILED_LIST="$FAILED_LIST $model_id"
-        cleanup
-        continue
-    fi
+        if run_model_eval "$model_id"; then
+            END_TIME=$(date +%s)
+            ELAPSED=$((END_TIME - START_TIME))
+            log "DONE: $model_id completed on attempt $attempt in ${ELAPSED}s"
+            checkpoint_update "$model_id" "completed" "$attempt" "$ELAPSED"
+            MODEL_SUCCESS=true
+            break
+        else
+            END_TIME=$(date +%s)
+            ELAPSED=$((END_TIME - START_TIME))
+            err "Attempt $attempt/$MAX_RETRIES failed for $model_id after ${ELAPSED}s"
+            checkpoint_update "$model_id" "retrying" "$attempt" "$ELAPSED" "attempt $attempt failed"
 
-    # Step 3: Start Green Agent
-    if ! start_green_agent "$model_id"; then
-        err "FAILED: Could not start Green Agent for $model_id"
-        FAILED=$((FAILED + 1))
-        FAILED_LIST="$FAILED_LIST $model_id"
-        cleanup
-        continue
-    fi
+            if [ "$attempt" -lt "$MAX_RETRIES" ]; then
+                log "Waiting 10s before retry..."
+                sleep 10
+            fi
+        fi
+    done
 
-    # Step 4: Run evaluation
-    if run_eval "$model_id"; then
+    if $MODEL_SUCCESS; then
         SUCCEEDED=$((SUCCEEDED + 1))
-        END_TIME=$(date +%s)
-        ELAPSED=$((END_TIME - START_TIME))
-        log "DONE: $model_id completed in ${ELAPSED}s"
     else
         FAILED=$((FAILED + 1))
         FAILED_LIST="$FAILED_LIST $model_id"
-        END_TIME=$(date +%s)
-        ELAPSED=$((END_TIME - START_TIME))
-        err "FAILED: $model_id evaluation failed after ${ELAPSED}s"
+        checkpoint_update "$model_id" "failed" "$MAX_RETRIES" 0 "all $MAX_RETRIES attempts exhausted"
+        err "FAILED: $model_id exhausted all $MAX_RETRIES retries"
     fi
-
-    cleanup
 done
 
 # ========================== Summary ==========================================
@@ -373,11 +481,13 @@ log "=========================================="
 log "EVALUATION COMPLETE"
 log "=========================================="
 log "Total models: $TOTAL_MODELS"
-log "Succeeded: $SUCCEEDED"
+log "Succeeded: $SUCCEEDED (${SKIPPED} from checkpoint)"
 log "Failed: $FAILED"
 if [ -n "$FAILED_LIST" ]; then
     log "Failed models:$FAILED_LIST"
 fi
+log ""
+checkpoint_summary
 log ""
 log "Results:"
 ls -lh "${RESULTS_DIR}"/eval_medium_*.json 2>/dev/null || log "  (no results)"
