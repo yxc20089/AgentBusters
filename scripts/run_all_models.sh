@@ -175,15 +175,47 @@ if failed: print(f'  Failed: {\" \".join(failed)}')
 
 cleanup() {
     log "Cleaning up processes..."
-    [ -n "$GREEN_PID" ] && kill "$GREEN_PID" 2>/dev/null && wait "$GREEN_PID" 2>/dev/null || true
-    [ -n "$PURPLE_PID" ] && kill "$PURPLE_PID" 2>/dev/null && wait "$PURPLE_PID" 2>/dev/null || true
-    [ -n "$VLLM_PID" ] && kill "$VLLM_PID" 2>/dev/null && wait "$VLLM_PID" 2>/dev/null || true
-    # Also kill by port in case PIDs are stale
+    # Graceful kill first
+    [ -n "$GREEN_PID" ] && kill "$GREEN_PID" 2>/dev/null || true
+    [ -n "$PURPLE_PID" ] && kill "$PURPLE_PID" 2>/dev/null || true
+    [ -n "$VLLM_PID" ] && kill "$VLLM_PID" 2>/dev/null || true
+    sleep 2
+    # Force-kill vLLM and all its child processes (EngineCore, etc.)
+    [ -n "$VLLM_PID" ] && kill -9 "$VLLM_PID" 2>/dev/null || true
+    # Kill ALL vllm-related processes (main + EngineCore children)
+    pkill -9 -f "vllm" 2>/dev/null || true
+    # Kill any python process using the GPU
+    local gpu_pids
+    gpu_pids=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | tr -d ' ')
+    if [ -n "$gpu_pids" ]; then
+        log "Killing GPU processes: $gpu_pids"
+        echo "$gpu_pids" | xargs -r kill -9 2>/dev/null || true
+    fi
+    # Kill by port
     fuser -k "${VLLM_PORT}/tcp" 2>/dev/null || true
     fuser -k "${PURPLE_PORT}/tcp" 2>/dev/null || true
     fuser -k "${GREEN_PORT}/tcp" 2>/dev/null || true
     VLLM_PID="" PURPLE_PID="" GREEN_PID=""
-    sleep 2
+    # Wait for GPU memory to be fully released and verify
+    local max_gpu_wait=30 gpu_elapsed=0
+    while [ "$gpu_elapsed" -lt "$max_gpu_wait" ]; do
+        local mem_used
+        mem_used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
+        if [ -n "$mem_used" ] && [ "$mem_used" -lt 2000 ]; then
+            log "GPU memory freed (${mem_used} MiB used)"
+            break
+        fi
+        sleep 2
+        gpu_elapsed=$((gpu_elapsed + 2))
+        if [ "$((gpu_elapsed % 10))" -eq 0 ]; then
+            log "Waiting for GPU memory release... (${mem_used} MiB still used)"
+            # Re-kill any lingering GPU processes
+            gpu_pids=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | tr -d ' ')
+            [ -n "$gpu_pids" ] && echo "$gpu_pids" | xargs -r kill -9 2>/dev/null || true
+        fi
+    done
+    log "Cleanup done. GPU memory:"
+    nvidia-smi --query-gpu=memory.used,memory.free --format=csv,noheader 2>/dev/null || true
 }
 
 wait_for_endpoint() {
