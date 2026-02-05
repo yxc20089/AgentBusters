@@ -1093,6 +1093,9 @@ class GreenAgent:
         examples_to_eval = self._loaded_examples[:num_tasks] if num_tasks else self._loaded_examples
         
         for i, example in enumerate(examples_to_eval):
+            logger.info(
+                f"[{i+1}/{len(examples_to_eval)}] Evaluating {example.dataset_type}: {example.example_id}"
+            )
             await updater.update_status(
                 TaskState.working,
                 new_agent_text_message(
@@ -1488,7 +1491,12 @@ class GreenAgent:
                     result["tool_calls"] = tool_calls_raw
                 
                 all_results.append(result)
-                
+                score = result.get("raw_score", result.get("score", "?"))
+                logger.info(
+                    f"[{i+1}/{len(examples_to_eval)}] Done {example.dataset_type}:{example.example_id} "
+                    f"score={score}"
+                )
+
             except Exception as e:
                 all_results.append({
                     "example_id": example.example_id,
@@ -1497,7 +1505,10 @@ class GreenAgent:
                     "score": 0.0,
                     "is_correct": False,
                 })
-        
+                logger.error(
+                    f"[{i+1}/{len(examples_to_eval)}] FAILED {example.dataset_type}:{example.example_id}: {e}"
+                )
+
         return all_results
 
 
