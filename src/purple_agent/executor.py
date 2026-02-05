@@ -100,6 +100,13 @@ class FinanceAgentExecutor(AgentExecutor):
             else:
                 self.temperature = 0.0  # Default to 0 for reproducible benchmarks
 
+        # Reasoning effort for extended thinking (o1/o3/gpt-5 style models)
+        # Options: "off", "low", "medium", "high"
+        reasoning_env = os.getenv("PURPLE_REASONING_EFFORT", "high").lower()
+        if reasoning_env not in {"off", "low", "medium", "high"}:
+            reasoning_env = "medium"  # Fallback to medium for invalid values
+        self.reasoning_effort = None if reasoning_env == "off" else reasoning_env
+
         # Always use in-process MCP servers for controlled environment
         self.toolkit = MCPToolkit(simulation_date=simulation_date)
 
@@ -267,6 +274,15 @@ class FinanceAgentExecutor(AgentExecutor):
     # Maximum tool calls per request to prevent infinite loops
     # Can be configured via PURPLE_MAX_TOOL_CALLS environment variable
     MAX_TOOL_CALLS = int(os.environ.get("PURPLE_MAX_TOOL_CALLS", "25"))
+
+    def _get_reasoning_extra_body(self) -> dict | None:
+        """Get extra_body dict with reasoning config if enabled."""
+        if self.reasoning_effort:
+            return {
+                "reasoning": {"effort": self.reasoning_effort},
+                "include_reasoning": True,
+            }
+        return None
     
     def _init_tool_call_log(self):
         """Initialize tool call log for current request."""
@@ -348,6 +364,7 @@ Provide a comprehensive answer with specific data points."""
             try:
                 if hasattr(self.llm_client, "chat"):
                     # OpenAI-style client
+                    extra_body = self._get_reasoning_extra_body()
                     response = await asyncio.to_thread(
                         lambda: self.llm_client.chat.completions.create(
                             model=self.model,
@@ -355,6 +372,7 @@ Provide a comprehensive answer with specific data points."""
                             tools=TOOLS,
                             tool_choice="auto",
                             temperature=self.temperature,
+                            **({"extra_body": extra_body} if extra_body else {}),
                         )
                     )
 
@@ -752,12 +770,14 @@ Respond with ONLY this JSON format:
         if self.llm_client is not None:
             try:
                 if hasattr(self.llm_client, "chat"):
+                    extra_body = self._get_reasoning_extra_body()
                     response = await asyncio.to_thread(
                         lambda: self.llm_client.chat.completions.create(
                             model=self.model,
                             messages=[{"role": "user", "content": prompt}],
                             temperature=self.temperature,
                             max_tokens=200,
+                            **({"extra_body": extra_body} if extra_body else {}),
                         )
                     )
                     llm_response = response.choices[0].message.content.strip()
@@ -1230,6 +1250,7 @@ Respond with ONLY the task type (e.g., "options_pricing"). Nothing else."""
         try:
             if hasattr(self.llm_client, "chat"):
                 # OpenAI-style client
+                extra_body = self._get_reasoning_extra_body()
                 response = await asyncio.to_thread(
                     lambda: self.llm_client.chat.completions.create(
                         model=self.model,
@@ -1238,6 +1259,7 @@ Respond with ONLY the task type (e.g., "options_pricing"). Nothing else."""
                             {"role": "user", "content": user_prompt},
                         ],
                         temperature=self.temperature,
+                        **({"extra_body": extra_body} if extra_body else {}),
                     )
                 )
                 return response.choices[0].message.content

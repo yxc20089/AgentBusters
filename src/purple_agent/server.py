@@ -238,6 +238,9 @@ def run_server(
     """
     import uvicorn
 
+    # Load environment variables FIRST, before reading them
+    _load_env()
+
     # Get configuration from environment
     openai_key = os.environ.get("OPENAI_API_KEY")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
