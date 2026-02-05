@@ -24,6 +24,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
+# Activate venv if available
+if [ -f "$HOME/venv/bin/activate" ]; then
+    source "$HOME/venv/bin/activate"
+fi
+
 # Ports
 VLLM_PORT=8000
 PURPLE_PORT=9110
