@@ -286,15 +286,13 @@ class FinanceAgentExecutor(AgentExecutor):
 
     def _inject_cache_bypass_nonce(self, system_prompt: str | None) -> str:
         """
-        Inject a model-based nonce into the system prompt to bypass OpenRouter cache.
+        Inject a unique nonce into the system prompt to bypass OpenRouter cache.
 
-        Different models get different prompts, defeating prompt-based caching,
-        while the same model gets the same nonce for reproducibility.
-
-        The nonce is formatted as a comment-like marker to reduce the chance that
-        the model interprets it as an instruction.
+        Uses UUID to ensure every request is unique and never cached.
+        This prioritizes fresh responses over reproducibility.
         """
-        nonce = f"<!-- cache_bypass_model:{self.model} -->"
+        from uuid import uuid4
+        nonce = f"<!-- nonce:{uuid4().hex[:8]} model:{self.model} -->"
         if system_prompt:
             return f"{nonce}\n{system_prompt}"
         return nonce
