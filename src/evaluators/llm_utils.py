@@ -389,12 +389,23 @@ def call_llm(
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        # Newer OpenAI models (o1+, gpt-5+) require max_completion_tokens
+        # instead of max_tokens. Try max_completion_tokens first, fall back
+        # to max_tokens for older models and vLLM.
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_completion_tokens=max_tokens,
+            )
+        except Exception:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
         return response.choices[0].message.content or ""
 
     if hasattr(client, "messages"):
