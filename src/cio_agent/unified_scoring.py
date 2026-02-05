@@ -64,6 +64,9 @@ class NormalizedTaskResult:
     normalized_score: float  # 0-100
     is_correct: bool
     feedback: str = ""
+    question: str = ""
+    expected: str = ""
+    predicted: str = ""
     sub_scores: dict[str, float] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -131,6 +134,9 @@ class UnifiedEvaluationResult:
                     "raw_score": round(r.raw_score, 4),
                     "normalized_score": round(r.normalized_score, 2),
                     "is_correct": r.is_correct,
+                    "question": r.question,
+                    "expected": r.expected,
+                    "predicted": r.predicted,
                     "feedback": r.feedback,
                 }
                 for r in self.detailed_results
@@ -191,6 +197,9 @@ class UnifiedScorer:
         raw_score: float,
         is_correct: bool,
         feedback: str = "",
+        question: str = "",
+        expected: str = "",
+        predicted: str = "",
         sub_scores: Optional[dict[str, float]] = None,
         metadata: Optional[dict[str, Any]] = None,
     ) -> Optional[NormalizedTaskResult]:
@@ -203,6 +212,9 @@ class UnifiedScorer:
             raw_score: Raw score from evaluator
             is_correct: Whether the answer was correct
             feedback: Evaluation feedback
+            question: The question/prompt sent to the agent
+            expected: The expected/reference answer
+            predicted: The agent's actual response
             sub_scores: Optional sub-scores (e.g., for options: pnl_accuracy, etc.)
             metadata: Optional additional metadata
 
@@ -223,6 +235,9 @@ class UnifiedScorer:
             normalized_score=normalized_score,
             is_correct=is_correct,
             feedback=feedback,
+            question=question,
+            expected=expected,
+            predicted=predicted,
             sub_scores=sub_scores or {},
             metadata=metadata or {},
         )

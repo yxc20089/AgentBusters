@@ -29,6 +29,15 @@ if [ -f "$HOME/venv/bin/activate" ]; then
     source "$HOME/venv/bin/activate"
 fi
 
+# Pre-download tiktoken encoding for GPT-OSS models
+TIKTOKEN_DIR="$PROJECT_DIR/.tiktoken_cache"
+if [ ! -f "$TIKTOKEN_DIR/o200k_base.tiktoken" ]; then
+    mkdir -p "$TIKTOKEN_DIR"
+    wget -q -O "$TIKTOKEN_DIR/o200k_base.tiktoken" \
+        "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken" 2>/dev/null || true
+fi
+export TIKTOKEN_ENCODINGS_BASE="$TIKTOKEN_DIR"
+
 # Ports
 VLLM_PORT=8000
 PURPLE_PORT=9110
@@ -359,6 +368,7 @@ run_eval() {
 
 # Parse arguments
 MODELS="$DEFAULT_ORDER"
+FRESH=false
 while [ $# -gt 0 ]; do
     case "$1" in
         --models)
@@ -369,6 +379,10 @@ while [ $# -gt 0 ]; do
             MAX_RETRIES="$2"
             shift 2
             ;;
+        --fresh)
+            FRESH=true
+            shift
+            ;;
         --skip-setup)
             shift
             ;;
@@ -378,6 +392,15 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
+
+# If --fresh, clear all results and checkpoint for requested models
+if $FRESH; then
+    log "FRESH mode: clearing old results and checkpoint"
+    for m in $MODELS; do
+        rm -f "${RESULTS_DIR}/eval_medium_${m}.json"
+    done
+    rm -f "$CHECKPOINT_FILE"
+fi
 
 trap cleanup EXIT
 

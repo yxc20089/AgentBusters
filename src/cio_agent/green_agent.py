@@ -449,6 +449,9 @@ class GreenAgent:
                         raw_score=raw_score,
                         is_correct=is_correct,
                         feedback=r.get("feedback", ""),
+                        question=r.get("question", ""),
+                        expected=r.get("expected", ""),
+                        predicted=r.get("predicted", ""),
                         sub_scores=sub_scores,
                     )
                     if normalized:
