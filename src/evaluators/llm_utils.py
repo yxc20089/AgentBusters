@@ -390,22 +390,22 @@ def call_llm(
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
         # Newer OpenAI models (o1+, gpt-5+) require max_completion_tokens
-        # instead of max_tokens. Try max_completion_tokens first, fall back
-        # to max_tokens for older models and vLLM.
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_completion_tokens=max_tokens,
-            )
-        except Exception:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+        # instead of max_tokens.
+        _model_lower = (model or "").lower()
+        _uses_completion_tokens = any(
+            _model_lower.startswith(p) for p in ("o1", "o3", "gpt-5", "gpt-6")
+        )
+        token_kwargs = (
+            {"max_completion_tokens": max_tokens}
+            if _uses_completion_tokens
+            else {"max_tokens": max_tokens}
+        )
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            **token_kwargs,
+        )
         return response.choices[0].message.content or ""
 
     if hasattr(client, "messages"):
