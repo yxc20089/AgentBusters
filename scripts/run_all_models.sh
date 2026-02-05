@@ -128,7 +128,7 @@ import json, sys
 with open('$CHECKPOINT_FILE') as f: data = json.load(f)
 entry = data.get('models', {}).get('$model_id', {})
 print(entry.get('status', ''))
-" 2>/dev/null
+" 2>/dev/null || true
     fi
 }
 
@@ -169,7 +169,7 @@ failed = [m for m, v in models.items() if v['status'] == 'failed']
 print(f'Checkpoint: {len(completed)} completed, {len(failed)} failed')
 if completed: print(f'  Completed: {\" \".join(completed)}')
 if failed: print(f'  Failed: {\" \".join(failed)}')
-"
+" || true
     fi
 }
 
@@ -299,6 +299,7 @@ run_eval() {
 
     log "Running evaluation: $model_id → $output_file"
 
+    set +eo pipefail
     PYTHONPATH=src python scripts/run_a2a_eval.py \
         --green-url "http://localhost:${GREEN_PORT}" \
         --purple-url "http://localhost:${PURPLE_PORT}" \
@@ -308,8 +309,8 @@ run_eval() {
         --output "$output_file" \
         --verbose \
         2>&1 | tee "$LOG_DIR/eval_${model_id}.log"
-
     local exit_code=${PIPESTATUS[0]}
+    set -eo pipefail
 
     if [ -f "$output_file" ]; then
         local size
