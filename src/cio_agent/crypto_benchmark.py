@@ -1498,6 +1498,9 @@ class CryptoTradingEvaluator:
             if std_ret > 0:
                 sharpe = (mean_ret / std_ret) * _annualization_factor(timeframe)
 
+        # Buy-and-hold win_rate is binary (1.0 if profitable, 0.0 otherwise)
+        # since it represents a single position, unlike the proportional
+        # win_rate calculated from multiple trades in _compute_metrics.
         win_rate = 1.0 if total_return > 0 else 0.0
 
         return {

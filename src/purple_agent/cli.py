@@ -51,6 +51,9 @@ def serve(
     log_file: Optional[str] = typer.Option(
         None, "--log-file", "-l", help="Log file path (logs to both file and console)"
     ),
+    database_url: Optional[str] = typer.Option(
+        None, "--database-url", help="Database URL for task store (e.g., sqlite+aiosqlite:///results.db). Overrides PURPLE_DATABASE_URL env var."
+    ),
 ):
     """
     Start the Purple Agent A2A server.
@@ -114,6 +117,7 @@ def serve(
         anthropic_api_key=anthropic_key,
         model=model,
         simulation_date=sim_date,
+        database_url=database_url,
     )
 
     console.print(f"\n[green]Starting A2A server at http://{host}:{port}[/green]")

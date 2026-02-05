@@ -87,6 +87,11 @@ def main():
         help="URL to advertise in the agent card"
     )
     parser.add_argument(
+        "--database-url",
+        type=str,
+        help="Database URL for task store (e.g., sqlite+aiosqlite:///results.db). Overrides DATABASE_URL env var."
+    )
+    parser.add_argument(
         "--eval-config",
         type=str,
         help="Path to evaluation config YAML file (recommended for multi-dataset evaluation)"
@@ -359,7 +364,7 @@ def main():
 
     # Create request handler with executor
     logger = logging.getLogger(__name__)
-    database_url = os.getenv("DATABASE_URL")
+    database_url = args.database_url or os.getenv("DATABASE_URL")
 
     task_store = None
     if database_url:

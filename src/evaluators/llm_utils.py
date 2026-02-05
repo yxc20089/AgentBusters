@@ -9,6 +9,7 @@ Supports per-evaluator LLM configuration via EvaluatorLLMConfig.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -364,8 +365,18 @@ def call_llm(
     Call an OpenAI- or Anthropic-style client and return text content.
     
     Automatically adjusts max_tokens if the prompt is too long to avoid context overflow.
+    
+    Uses a model-based seed to ensure:
+    - Same model + same prompt → reproducible results (same seed)
+    - Different models + same prompt → bypasses OpenRouter cache (different seeds)
     """
     model = model or get_llm_model()
+    
+    # Generate a fixed seed based on model name for reproducibility.
+    # - Same model + same prompt + same seed → deterministic outputs
+    # - Different models naturally have different seeds, which helps differentiate
+    #   requests (though the model name itself is the primary cache differentiator)
+    model_seed = int(hashlib.md5(model.encode()).hexdigest()[:8], 16)
     
     # Estimate token count (rough: ~4 chars per token for English)
     estimated_prompt_tokens = (len(prompt) + len(system_prompt or "")) // 3
@@ -394,10 +405,12 @@ def call_llm(
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            seed=model_seed,  # Model-based seed for cache bypass + reproducibility
         )
         return response.choices[0].message.content or ""
 
     if hasattr(client, "messages"):
+        # Anthropic Claude API does not support 'seed' parameter for deterministic outputs
         response = client.messages.create(
             model=model,
             max_tokens=max_tokens,

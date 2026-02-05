@@ -449,6 +449,21 @@ Return JSON only:
             }
         )
 
+    @staticmethod
+    def _to_int_list(values) -> list[int]:
+        """Best-effort conversion of an iterable of values to ints.
+
+        Skips any values that cannot be converted instead of failing the
+        entire parse path.
+        """
+        result: list[int] = []
+        for v in values:
+            try:
+                result.append(int(v))
+            except (ValueError, TypeError):
+                continue
+        return result
+
     def _extract_id_list(self, text: str) -> list[int]:
         """Extract a list of integer IDs from text.
 
@@ -456,35 +471,44 @@ Return JSON only:
         ``[1,3]``), then falls back to regex extraction of bracketed number
         lists.
         """
-        # Try JSON object with "answer" key
+        # Try JSON parsing first
         try:
             data = json.loads(text.strip())
-            if isinstance(data, dict):
-                val = data.get("answer", data.get("Answer", []))
-                if isinstance(val, list):
-                    return [int(v) for v in val]
-            if isinstance(data, list):
-                return [int(v) for v in data]
-        except (json.JSONDecodeError, ValueError, TypeError):
-            pass
+        except json.JSONDecodeError:
+            data = None
 
-        # Try extracting JSON from within longer text
-        json_match = re.search(r'\{[^{}]*"answer"\s*:\s*\[([^\]]*)\][^{}]*\}', text, re.IGNORECASE)
-        if json_match:
-            try:
-                nums = json_match.group(1)
-                return [int(x.strip()) for x in nums.split(",") if x.strip()]
-            except ValueError:
-                pass
+        if isinstance(data, dict):
+            val = data.get("answer", data.get("Answer", []))
+            if isinstance(val, list):
+                ints = self._to_int_list(val)
+                if ints:
+                    return ints
+        elif isinstance(data, list):
+            ints = self._to_int_list(data)
+            if ints:
+                return ints
+
+        # Try extracting JSON from within longer text using extract_json helper
+        # This handles nested structures better than regex
+        try:
+            extracted = extract_json(text)
+        except Exception:
+            extracted = None
+
+        if isinstance(extracted, dict):
+            val = extracted.get("answer", extracted.get("Answer", []))
+            if isinstance(val, list):
+                ints = self._to_int_list(val)
+                if ints:
+                    return ints
 
         # Fallback: extract bracketed list like [1, 3, 7]
         bracket_match = re.search(r'\[([^\]]*)\]', text)
         if bracket_match:
-            try:
-                items = bracket_match.group(1).split(",")
-                return [int(x.strip()) for x in items if x.strip()]
-            except ValueError:
-                pass
+            items = [x.strip() for x in bracket_match.group(1).split(",") if x.strip()]
+            ints = self._to_int_list(items)
+            if ints:
+                return ints
 
         return []
 

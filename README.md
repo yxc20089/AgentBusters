@@ -255,6 +255,9 @@ You can also set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in `.env`.
 # Recommended: Production-grade A2A server with full LLM support
 purple-agent serve --host 0.0.0.0 --port 9110 --card-url http://localhost:9110
 
+# With custom database:
+# purple-agent serve --host 0.0.0.0 --port 9110 --database-url sqlite+aiosqlite:///my_purple.db
+
 # Alternatively: Simple test agent (minimal A2A + REST)
 # python src/simple_purple_agent.py --host 0.0.0.0 --port 9110 --card-url http://localhost:9110
 
@@ -275,6 +278,10 @@ purple-agent serve --host 0.0.0.0 --port 9110 --card-url http://localhost:9110
 #     path: data/crypto/scenarios/sample_btc_window
 # in `eval_all.yaml`
 python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 --eval-config config/eval_all.yaml
+
+# With custom database:
+# python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 \
+#   --eval-config config/eval_all.yaml --database-url sqlite+aiosqlite:///my_green.db
 
 # Terminal 7 Run Evaluation:
 python scripts/run_a2a_eval.py --green-url http://localhost:9109 --purple-url http://localhost:9110 --num-tasks 1 --timeout 300 -v
@@ -782,6 +789,36 @@ python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 \
 By default, expected answer text is truncated to 100 characters.  
 Use `--store-expected --no-truncate-expected` to keep full expected answers in results.
 
+**Logging control:**
+```bash
+# Default: quiet mode - minimal output
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 \
+  --eval-config config/eval_config.yaml
+
+# Verbose mode - show detailed startup info
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 \
+  --eval-config config/eval_config.yaml --verbose
+
+# Debug mode - verbose output for troubleshooting
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 \
+  --eval-config config/eval_config.yaml --debug
+```
+Default is quiet mode (minimal output). Use `--verbose` or `-v` for detailed startup info.  
+Use `--debug` for evaluation details (Greeks extraction, LLM calls, etc.).
+
+**Database configuration:**
+```bash
+# Green Agent with custom database
+python src/cio_agent/a2a_server.py --host 0.0.0.0 --port 9109 \
+  --eval-config config/eval_config.yaml \
+  --database-url "sqlite+aiosqlite:///green_results.db"
+
+# Purple Agent with custom database
+purple-agent serve --host 0.0.0.0 --port 9110 \
+  --database-url "sqlite+aiosqlite:///purple_tasks.db"
+```
+The `--database-url` parameter overrides `DATABASE_URL` (Green) or `PURPLE_DATABASE_URL` (Purple) environment variables.
+
 The agents will automatically load `.env` on startup. Alternatively, you can use `export` commands instead of `.env` file.
 
 ### Environment Variables Reference
@@ -802,6 +839,8 @@ The agents will automatically load `.env` on startup. Alternatively, you can use
 | `MCP_SANDBOX_URL` | Sandbox MCP server | `http://localhost:8103` |
 | `DATABASE_URL` | SQLite database URL (Green Agent) | `sqlite+aiosqlite:///tasks.db` |
 | `PURPLE_DATABASE_URL` | SQLite database URL (Purple Agent) | `sqlite+aiosqlite:///purple_tasks.db` |
+
+**Note:** Both agents support `--database-url` CLI parameter which overrides the environment variable.
 
 ### Database Maintenance
 

@@ -51,6 +51,7 @@ def create_app(
     model: str | None = None,
     simulation_date: datetime | None = None,
     temperature: float | None = None,
+    database_url: str | None = None,
 ) -> FastAPI:
     """
     Create the FastAPI application with A2A protocol support.
@@ -118,7 +119,7 @@ def create_app(
     logger.info(f"FinanceAgentExecutor created with model={default_model or 'gpt-4o'}")
 
     # Create A2A infrastructure with persistent storage
-    database_url = os.getenv("PURPLE_DATABASE_URL", "sqlite+aiosqlite:///purple_tasks.db")
+    database_url = database_url or os.getenv("PURPLE_DATABASE_URL", "sqlite+aiosqlite:///purple_tasks.db")
     try:
         engine = create_async_engine(database_url)
         task_store = DatabaseTaskStore(engine)

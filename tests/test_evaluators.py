@@ -118,6 +118,51 @@ class TestBizFinBenchEvaluator:
         result = evaluator.evaluate("negative", "positive", task_type="user_sentiment_analysis")
         assert result.score == 0.0
 
+    # JSON list match tests (financial_data_description task type)
+    def test_json_list_match_exact(self, evaluator):
+        """Test exact match of ID lists."""
+        result = evaluator.evaluate('{"answer": [1, 3, 5]}', '{"answer": [1, 3, 5]}', task_type="financial_data_description")
+        assert result.score == 1.0
+        assert result.is_correct
+
+    def test_json_list_match_different_order(self, evaluator):
+        """Test ID lists match regardless of order (set comparison)."""
+        result = evaluator.evaluate('{"answer": [5, 1, 3]}', '{"answer": [1, 3, 5]}', task_type="financial_data_description")
+        assert result.score == 1.0
+
+    def test_json_list_match_bare_list(self, evaluator):
+        """Test bare JSON list format."""
+        result = evaluator.evaluate('[1, 3, 5]', '[1, 3, 5]', task_type="financial_data_description")
+        assert result.score == 1.0
+
+    def test_json_list_match_mismatch(self, evaluator):
+        """Test mismatched ID lists."""
+        result = evaluator.evaluate('{"answer": [1, 3]}', '{"answer": [1, 3, 5]}', task_type="financial_data_description")
+        assert result.score == 0.0
+
+    def test_json_list_match_embedded_in_text(self, evaluator):
+        """Test extraction of JSON from longer text."""
+        predicted = 'Based on my analysis, the errors are: {"answer": [2, 4, 6]}'
+        expected = '{"answer": [2, 4, 6]}'
+        result = evaluator.evaluate(predicted, expected, task_type="financial_data_description")
+        assert result.score == 1.0
+
+    def test_json_list_match_with_invalid_values(self, evaluator):
+        """Test handling of non-integer values in list (should be skipped)."""
+        # Partial extraction - only valid integers should be extracted
+        result = evaluator.evaluate('[1, "invalid", 3]', '[1, 3]', task_type="financial_data_description")
+        assert result.score == 1.0
+
+    def test_json_list_match_empty_lists(self, evaluator):
+        """Test empty ID lists."""
+        result = evaluator.evaluate('[]', '[]', task_type="financial_data_description")
+        assert result.score == 1.0
+
+    def test_json_list_match_bracket_fallback(self, evaluator):
+        """Test fallback to bracket extraction."""
+        result = evaluator.evaluate('The IDs are [1, 2, 3]', '[1, 2, 3]', task_type="financial_data_description")
+        assert result.score == 1.0
+
     # Edge cases
     def test_empty_prediction(self, evaluator):
         result = evaluator.evaluate("", "1.2532", task_type="financial_quantitative_computation")

@@ -349,6 +349,89 @@ class TestCryptoMetrics:
         assert "total_return" in metrics
         assert metrics["total_return"] > 0  # Positive return
 
+    def test_buyhold_positive_return(self):
+        """Test buy-and-hold metrics with positive return."""
+        evaluator = self._create_evaluator()
+
+        # Market states with rising prices
+        states = [
+            {"ohlcv": {"close": 100}},
+            {"ohlcv": {"close": 105}},
+            {"ohlcv": {"close": 110}},
+            {"ohlcv": {"close": 115}},
+        ]
+        metrics = evaluator._compute_buyhold_metrics(states, timeframe="1m")
+
+        assert metrics["total_return"] == 0.15  # 15% return
+        assert metrics["win_rate"] == 1.0  # Profitable
+        assert metrics["max_drawdown"] == 0.0  # No drawdown in rising market
+
+    def test_buyhold_negative_return(self):
+        """Test buy-and-hold metrics with negative return."""
+        evaluator = self._create_evaluator()
+
+        # Market states with falling prices
+        states = [
+            {"ohlcv": {"close": 100}},
+            {"ohlcv": {"close": 95}},
+            {"ohlcv": {"close": 90}},
+            {"ohlcv": {"close": 85}},
+        ]
+        metrics = evaluator._compute_buyhold_metrics(states, timeframe="1m")
+
+        assert metrics["total_return"] == -0.15  # -15% return
+        assert metrics["win_rate"] == 0.0  # Not profitable
+
+    def test_buyhold_with_drawdown(self):
+        """Test buy-and-hold max drawdown calculation."""
+        evaluator = self._create_evaluator()
+
+        # Market that goes up then down
+        states = [
+            {"ohlcv": {"close": 100}},
+            {"ohlcv": {"close": 120}},  # Peak
+            {"ohlcv": {"close": 96}},   # 20% drawdown from peak
+            {"ohlcv": {"close": 110}},
+        ]
+        metrics = evaluator._compute_buyhold_metrics(states, timeframe="1m")
+
+        assert metrics["max_drawdown"] >= 0.19  # ~20% drawdown from 120 to 96
+
+    def test_buyhold_empty_states(self):
+        """Test buy-and-hold with empty states."""
+        evaluator = self._create_evaluator()
+
+        metrics = evaluator._compute_buyhold_metrics([], timeframe="1m")
+
+        assert metrics["total_return"] == 0.0
+        assert metrics["sharpe"] == 0.0
+
+    def test_buyhold_single_state(self):
+        """Test buy-and-hold with single state (insufficient data)."""
+        evaluator = self._create_evaluator()
+
+        states = [{"ohlcv": {"close": 100}}]
+        metrics = evaluator._compute_buyhold_metrics(states, timeframe="1m")
+
+        assert metrics["total_return"] == 0.0
+
+    def test_buyhold_sharpe_calculation(self):
+        """Test buy-and-hold Sharpe ratio is computed."""
+        evaluator = self._create_evaluator()
+
+        # Market with volatility
+        states = [
+            {"ohlcv": {"close": 100}},
+            {"ohlcv": {"close": 102}},
+            {"ohlcv": {"close": 99}},
+            {"ohlcv": {"close": 104}},
+            {"ohlcv": {"close": 103}},
+        ]
+        metrics = evaluator._compute_buyhold_metrics(states, timeframe="1m")
+
+        # Sharpe should be a number (with volatility present)
+        assert isinstance(metrics["sharpe"], (int, float))
+
 
 class TestCryptoDatasetConfig:
     """Test crypto dataset configuration."""
