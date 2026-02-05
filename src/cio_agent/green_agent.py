@@ -731,27 +731,35 @@ class GreenAgent:
 
     def _format_question(self, question: str) -> str:
         """Format question text based on storage and truncation settings."""
-        if not self.store_question:
-            return ""
-        # User wants question stored
-        if not self.truncate_question or self.question_max_chars <= 0:
-            return question
-        if len(question) <= self.question_max_chars:
-            return question
-        return question[: self.question_max_chars] + "..."
+        if self.store_question:
+            # User wants full question stored
+            if not self.truncate_question or self.question_max_chars <= 0:
+                return question
+            if len(question) <= self.question_max_chars:
+                return question
+            return question[: self.question_max_chars] + "..."
+        else:
+            # Default behavior: always truncate to 200 chars
+            if len(question) <= 200:
+                return question
+            return question[:200] + "..."
 
     def _format_expected(self, expected: str) -> str:
         """Format expected answer text based on storage and truncation settings."""
         if not expected:
             return ""
-        if not self.store_expected:
-            return ""
-        # User wants expected stored
-        if not self.truncate_expected or self.expected_max_chars <= 0:
-            return expected
-        if len(expected) <= self.expected_max_chars:
-            return expected
-        return expected[: self.expected_max_chars] + "..."
+        if self.store_expected:
+            # User wants full expected stored
+            if not self.truncate_expected or self.expected_max_chars <= 0:
+                return expected
+            if len(expected) <= self.expected_max_chars:
+                return expected
+            return expected[: self.expected_max_chars] + "..."
+        else:
+            # Default behavior: always truncate to 100 chars
+            if len(expected) <= 100:
+                return expected
+            return expected[:100] + "..."
 
     async def _run_evaluator_async(self, evaluator, **kwargs):
         """Run a synchronous evaluator.evaluate() call in a thread pool.
