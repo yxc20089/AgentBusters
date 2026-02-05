@@ -50,7 +50,7 @@ dependencies = [
     "fastmcp>=2.14.0",  # Requires >=2.14.0 for get_tools() dict API
     # HuggingFace datasets for dynamic benchmark retrieval
     "datasets==4.0.0",  # Requires >=4.0.0 to fix dataclass compatibility issues
-    "huggingface-hub==1.0.0",  # Ensure compatible version with datasets
+    "huggingface-hub>=0.34.0,<1.0",  # Compatible with both transformers and datasets
     # Tavily for web search MCP tools - fixed version to avoid dependency conflicts
     "tavily-python==0.7.20",
     "openpyxl==3.1.5",
