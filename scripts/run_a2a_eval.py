@@ -36,18 +36,23 @@ async def send_eval_request(
     conduct_debate: bool,
     timeout: int,
     verbose: bool,
+    model_id: str = "",
 ) -> dict:
     """Send evaluation request to Green Agent."""
-    
+
     # Build the evaluation request
+    config = {
+        "num_tasks": num_tasks,
+        "conduct_debate": conduct_debate,
+    }
+    if model_id:
+        config["model_id"] = model_id
+
     eval_request = {
         "participants": {
             "purple_agent": purple_url
         },
-        "config": {
-            "num_tasks": num_tasks,
-            "conduct_debate": conduct_debate,
-        }
+        "config": config,
     }
     
     # Build A2A JSON-RPC message
@@ -278,15 +283,24 @@ def main():
         action="store_true",
         help="Verbose output"
     )
-    
+    parser.add_argument(
+        "--model-id",
+        type=str,
+        default="",
+        help="Purple Agent model identifier (e.g. 'gpt-5.2', 'deepseek-v3.2'). "
+             "Used to differentiate crypto seeds across different models."
+    )
+
     args = parser.parse_args()
     
     print("🚀 FAB++ A2A Evaluation")
     print(f"   Green Agent: {args.green_url}")
     print(f"   Purple Agent: {args.purple_url}")
     print(f"   Tasks: {args.num_tasks}")
+    if args.model_id:
+        print(f"   Model ID: {args.model_id}")
     print(f"   Timeout: {args.timeout}s")
-    
+
     # Run evaluation
     result = asyncio.run(send_eval_request(
         green_url=args.green_url,
@@ -295,6 +309,7 @@ def main():
         conduct_debate=args.conduct_debate,
         timeout=args.timeout,
         verbose=args.verbose,
+        model_id=args.model_id,
     ))
     
     # Print results
