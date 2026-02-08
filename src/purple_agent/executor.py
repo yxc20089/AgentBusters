@@ -796,13 +796,15 @@ Respond with ONLY this JSON format:
         if self.llm_client is not None:
             try:
                 if hasattr(self.llm_client, "chat"):
+                    # Use _get_api_kwargs for param compatibility across model types
+                    api_kwargs = self._get_api_kwargs(
+                        model=self.model,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=self.temperature,
+                        max_tokens=200,
+                    )
                     response = await asyncio.to_thread(
-                        lambda: self.llm_client.chat.completions.create(
-                            model=self.model,
-                            messages=[{"role": "user", "content": prompt}],
-                            temperature=self.temperature,
-                            max_completion_tokens=200,
-                        )
+                        lambda: self.llm_client.chat.completions.create(**api_kwargs)
                     )
                     llm_response = response.choices[0].message.content.strip()
                 elif hasattr(self.llm_client, "messages"):
@@ -917,14 +919,15 @@ TICKERS (or NONE):"""
 
         try:
             if hasattr(self.llm_client, "chat"):
-                # OpenAI-style client
+                # OpenAI-style client - use _get_api_kwargs for param compatibility
+                api_kwargs = self._get_api_kwargs(
+                    model=self.model,
+                    messages=[{"role": "user", "content": extraction_prompt}],
+                    temperature=0,
+                    max_tokens=50,
+                )
                 response = await asyncio.to_thread(
-                    lambda: self.llm_client.chat.completions.create(
-                        model=self.model,
-                        messages=[{"role": "user", "content": extraction_prompt}],
-                        temperature=0,
-                        max_completion_tokens=50,
-                    )
+                    lambda: self.llm_client.chat.completions.create(**api_kwargs)
                 )
                 result = response.choices[0].message.content.strip().upper()
             elif hasattr(self.llm_client, "messages"):
@@ -991,14 +994,15 @@ Respond with ONLY the task type (e.g., "options_pricing"). Nothing else."""
 
         try:
             if hasattr(self.llm_client, "chat"):
-                # OpenAI-style client
+                # OpenAI-style client - use _get_api_kwargs for param compatibility
+                api_kwargs = self._get_api_kwargs(
+                    model=self.model,
+                    messages=[{"role": "user", "content": classification_prompt}],
+                    temperature=0,
+                    max_tokens=20,
+                )
                 response = await asyncio.to_thread(
-                    lambda: self.llm_client.chat.completions.create(
-                        model=self.model,
-                        messages=[{"role": "user", "content": classification_prompt}],
-                        temperature=0,
-                        max_completion_tokens=20,
-                    )
+                    lambda: self.llm_client.chat.completions.create(**api_kwargs)
                 )
                 task_type = response.choices[0].message.content.strip().lower()
             elif hasattr(self.llm_client, "messages"):
