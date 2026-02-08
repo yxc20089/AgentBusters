@@ -295,6 +295,151 @@ class TestFinanceAgentExecutorTemperature:
         assert executor.temperature == 0.0, "Default temperature must be 0.0 for reproducibility"
 
 
+class TestFinanceAgentExecutorApiKwargs:
+    """
+    Tests for FinanceAgentExecutor._get_api_kwargs method.
+    
+    Addresses Copilot review: Verify model-specific parameter handling:
+    - Regular models: max_tokens, temperature
+    - Reasoning models (o1, o3, o4, gpt-5-nano): max_completion_tokens, no temperature
+    """
+
+    def test_regular_model_keeps_max_tokens_and_temperature(self):
+        """Regular models should keep max_tokens and temperature unchanged."""
+        executor = FinanceAgentExecutor(model="gpt-4o-mini")
+        
+        kwargs = executor._get_api_kwargs(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": "test"}],
+            temperature=0.0,
+            max_tokens=100,
+        )
+        
+        assert "max_tokens" in kwargs, "Regular model should use max_tokens"
+        assert "max_completion_tokens" not in kwargs, "Regular model should NOT use max_completion_tokens"
+        assert "temperature" in kwargs, "Regular model should use temperature"
+        assert kwargs["temperature"] == 0.0
+
+    def test_o1_model_converts_max_tokens_and_drops_temperature(self):
+        """o1 models should convert max_tokens and drop temperature."""
+        executor = FinanceAgentExecutor(model="o1-mini")
+        
+        kwargs = executor._get_api_kwargs(
+            model="o1-mini",
+            messages=[{"role": "user", "content": "test"}],
+            temperature=0.0,
+            max_tokens=100,
+        )
+        
+        assert "max_completion_tokens" in kwargs, "o1 model should use max_completion_tokens"
+        assert kwargs["max_completion_tokens"] == 100
+        assert "max_tokens" not in kwargs, "o1 model should NOT use max_tokens"
+        assert "temperature" not in kwargs, "o1 model should NOT use temperature"
+
+    def test_o3_model_converts_max_tokens_and_drops_temperature(self):
+        """o3 models should convert max_tokens and drop temperature."""
+        executor = FinanceAgentExecutor(model="o3-mini")
+        
+        kwargs = executor._get_api_kwargs(
+            model="o3-mini",
+            messages=[{"role": "user", "content": "test"}],
+            temperature=0.0,
+            max_tokens=100,
+        )
+        
+        assert "max_completion_tokens" in kwargs, "o3 model should use max_completion_tokens"
+        assert "max_tokens" not in kwargs, "o3 model should NOT use max_tokens"
+        assert "temperature" not in kwargs, "o3 model should NOT use temperature"
+
+    def test_o4_model_converts_max_tokens_and_drops_temperature(self):
+        """o4 models should convert max_tokens and drop temperature."""
+        executor = FinanceAgentExecutor(model="o4-mini")
+        
+        kwargs = executor._get_api_kwargs(
+            model="o4-mini",
+            messages=[{"role": "user", "content": "test"}],
+            temperature=0.0,
+            max_tokens=100,
+        )
+        
+        assert "max_completion_tokens" in kwargs, "o4 model should use max_completion_tokens"
+        assert "max_tokens" not in kwargs, "o4 model should NOT use max_tokens"
+        assert "temperature" not in kwargs, "o4 model should NOT use temperature"
+
+    def test_gpt5_nano_converts_max_tokens_and_drops_temperature(self):
+        """gpt-5-nano should convert max_tokens and drop temperature."""
+        executor = FinanceAgentExecutor(model="gpt-5-nano-2025-08-07")
+        
+        kwargs = executor._get_api_kwargs(
+            model="gpt-5-nano-2025-08-07",
+            messages=[{"role": "user", "content": "test"}],
+            temperature=0.0,
+            max_tokens=100,
+        )
+        
+        assert "max_completion_tokens" in kwargs, "gpt-5-nano should use max_completion_tokens"
+        assert "max_tokens" not in kwargs, "gpt-5-nano should NOT use max_tokens"
+        assert "temperature" not in kwargs, "gpt-5-nano should NOT use temperature"
+
+    def test_gpt5_regular_keeps_max_tokens_and_temperature(self):
+        """gpt-5.2 (non-nano) should keep max_tokens and temperature."""
+        executor = FinanceAgentExecutor(model="gpt-5.2-2025-12-11")
+        
+        kwargs = executor._get_api_kwargs(
+            model="gpt-5.2-2025-12-11",
+            messages=[{"role": "user", "content": "test"}],
+            temperature=0.0,
+            max_tokens=100,
+        )
+        
+        assert "max_tokens" in kwargs, "gpt-5.2 should use max_tokens"
+        assert "max_completion_tokens" not in kwargs, "gpt-5.2 should NOT use max_completion_tokens"
+        assert "temperature" in kwargs, "gpt-5.2 should use temperature"
+
+    def test_is_reasoning_model_detection(self):
+        """Test _is_reasoning_model correctly identifies reasoning models."""
+        # Reasoning models
+        for model in ["o1", "o1-mini", "o3", "o3-mini", "o4-mini", "gpt-5-nano-2025-08-07"]:
+            executor = FinanceAgentExecutor(model=model)
+            assert executor._is_reasoning_model(), f"{model} should be detected as reasoning model"
+        
+        # Non-reasoning models
+        for model in ["gpt-4o", "gpt-4o-mini", "gpt-5.2-2025-12-11", "claude-3-sonnet"]:
+            executor = FinanceAgentExecutor(model=model)
+            assert not executor._is_reasoning_model(), f"{model} should NOT be detected as reasoning model"
+
+    def test_temperature_supported_flag_respected(self):
+        """Test that _temperature_supported flag is respected."""
+        executor = FinanceAgentExecutor(model="gpt-4o-mini")
+        
+        # Initially temperature is supported
+        kwargs1 = executor._get_api_kwargs(temperature=0.0)
+        assert "temperature" in kwargs1
+        
+        # After setting _temperature_supported to False
+        executor._temperature_supported = False
+        kwargs2 = executor._get_api_kwargs(temperature=0.0)
+        assert "temperature" not in kwargs2
+
+    def test_preserves_other_kwargs(self):
+        """Test that other kwargs are preserved unchanged."""
+        executor = FinanceAgentExecutor(model="gpt-4o-mini")
+        
+        kwargs = executor._get_api_kwargs(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": "test"}],
+            temperature=0.0,
+            max_tokens=100,
+            tools=[{"type": "function", "function": {"name": "test"}}],
+            tool_choice="auto",
+        )
+        
+        assert kwargs["model"] == "gpt-4o-mini"
+        assert kwargs["messages"] == [{"role": "user", "content": "test"}]
+        assert kwargs["tools"] == [{"type": "function", "function": {"name": "test"}}]
+        assert kwargs["tool_choice"] == "auto"
+
+
 class TestFinanceAgentExecutor:
     """Tests for the agent executor (uses in-process MCP servers)."""
 
