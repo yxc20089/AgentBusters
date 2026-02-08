@@ -113,28 +113,46 @@ class FinanceAgentExecutor(AgentExecutor):
         # Track if model supports temperature (some reasoning models don't)
         self._temperature_supported = True  # Will be set False on first rejection
 
-    def _is_reasoning_model(self) -> bool:
-        """Check if the model is a reasoning model that may not support temperature."""
-        model_lower = self.model.lower()
+    def _is_reasoning_model(self, model: str | None = None) -> bool:
+        """Check if the model is a reasoning model that may not support temperature.
+        
+        Args:
+            model: Model name to check. If None, uses self.model.
+        """
+        model_name = (model or self.model).lower()
         # o1/o3/o4 series and gpt-5-nano don't support custom temperature
         # Note: gpt-5.2 and other gpt-5 models DO support temperature=0
-        return any(model_lower.startswith(prefix) for prefix in (
+        return any(model_name.startswith(prefix) for prefix in (
             "o1", "o3", "o4", "o1-", "o3-", "o4-", "gpt-5-nano"
         ))
     
-    def _get_api_kwargs(self, **kwargs) -> dict:
-        """Build API kwargs, handling model-specific parameter restrictions."""
+    def _get_api_kwargs(self, provider: str = "openai", **kwargs) -> dict:
+        """Build API kwargs, handling model-specific and provider-specific restrictions.
+        
+        Args:
+            provider: API provider ("openai" or "anthropic")
+            **kwargs: API call parameters
+            
+        Returns:
+            Modified kwargs dict with provider/model-appropriate parameters
+        """
         api_kwargs = dict(kwargs)
+        
+        # Use the model from kwargs if provided, else fall back to self.model
+        model = api_kwargs.get("model", self.model)
+        is_reasoning = self._is_reasoning_model(model)
         
         # Handle temperature: skip if model doesn't support it
         if "temperature" in api_kwargs:
-            if not self._temperature_supported or self._is_reasoning_model():
+            if not self._temperature_supported or is_reasoning:
                 api_kwargs.pop("temperature", None)
         
-        # Handle max_tokens: use max_completion_tokens for reasoning models
+        # Handle max_tokens: use max_completion_tokens for OpenAI reasoning models only
+        # Anthropic always uses max_tokens (doesn't support max_completion_tokens)
         if "max_tokens" in api_kwargs:
-            if self._is_reasoning_model():
+            if provider == "openai" and is_reasoning:
                 api_kwargs["max_completion_tokens"] = api_kwargs.pop("max_tokens")
+            # For Anthropic, keep max_tokens as-is
         
         return api_kwargs
 
@@ -478,6 +496,7 @@ Provide a comprehensive answer with specific data points."""
                     anthropic_tools = self._convert_tools_to_anthropic_format()
                     
                     api_kwargs = self._get_api_kwargs(
+                        provider="anthropic",
                         model=self.model,
                         max_tokens=self.MAX_TOKENS_TOOL_RESPONSE,
                         system=system_prompt,
@@ -1299,11 +1318,18 @@ Respond with ONLY the task type (e.g., "options_pricing"). Nothing else."""
                         lambda: self.llm_client.chat.completions.create(**api_kwargs)
                     )
                 except Exception as e:
-                    # Fallback: if temperature is rejected, retry without it
+                    # Fallback: handle parameter rejections by retrying with adjusted params
                     error_msg = str(e).lower()
                     if "temperature" in error_msg and "does not support" in error_msg:
                         self._temperature_supported = False
                         api_kwargs.pop("temperature", None)
+                        response = await asyncio.to_thread(
+                            lambda: self.llm_client.chat.completions.create(**api_kwargs)
+                        )
+                    elif "max_tokens" in error_msg and "max_completion_tokens" in error_msg:
+                        # Some gateways reject max_tokens even for non-reasoning models
+                        api_kwargs.pop("max_tokens", None)
+                        api_kwargs["max_completion_tokens"] = self.MAX_TOKENS_ANALYSIS
                         response = await asyncio.to_thread(
                             lambda: self.llm_client.chat.completions.create(**api_kwargs)
                         )

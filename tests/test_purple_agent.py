@@ -439,6 +439,41 @@ class TestFinanceAgentExecutorApiKwargs:
         assert kwargs["tools"] == [{"type": "function", "function": {"name": "test"}}]
         assert kwargs["tool_choice"] == "auto"
 
+    def test_anthropic_provider_keeps_max_tokens(self):
+        """Test that Anthropic provider never converts max_tokens to max_completion_tokens."""
+        executor = FinanceAgentExecutor(model="o1-mini")  # Reasoning model
+        
+        # For OpenAI (default), should convert to max_completion_tokens
+        openai_kwargs = executor._get_api_kwargs(
+            model="o1-mini",
+            max_tokens=100,
+        )
+        assert "max_completion_tokens" in openai_kwargs
+        assert "max_tokens" not in openai_kwargs
+        
+        # For Anthropic, should keep max_tokens
+        anthropic_kwargs = executor._get_api_kwargs(
+            provider="anthropic",
+            model="o1-mini",
+            max_tokens=100,
+        )
+        assert "max_tokens" in anthropic_kwargs
+        assert "max_completion_tokens" not in anthropic_kwargs
+
+    def test_model_override_in_kwargs(self):
+        """Test that model passed in kwargs is respected for parameter decisions."""
+        # Executor initialized with regular model
+        executor = FinanceAgentExecutor(model="gpt-4o-mini")
+        
+        # But kwargs specifies a reasoning model - should use max_completion_tokens
+        kwargs = executor._get_api_kwargs(
+            model="o1-mini",
+            max_tokens=100,
+            temperature=0.0,
+        )
+        assert "max_completion_tokens" in kwargs, "Should use model from kwargs, not self.model"
+        assert "temperature" not in kwargs, "Should drop temperature for reasoning model"
+
 
 class TestFinanceAgentExecutor:
     """Tests for the agent executor (uses in-process MCP servers)."""
