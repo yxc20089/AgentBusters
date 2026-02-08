@@ -66,6 +66,13 @@ class FinanceAgentExecutor(AgentExecutor):
         "strangle", "spread", "covered call", "protective put", "butterfly",
         "volatility", "iv", "implied volatility", "black-scholes", "premium",
     ]
+    
+    # Token limits for different API call types
+    MAX_TOKENS_ANALYSIS = 4000      # Full analysis generation (~3000 words)
+    MAX_TOKENS_TOOL_RESPONSE = 4000  # Tool call responses
+    MAX_TOKENS_DECISION = 200        # Short decisions (trading, classification)
+    MAX_TOKENS_EXTRACTION = 50       # Ticker/metadata extraction
+    MAX_TOKENS_CLASSIFICATION = 20   # Task type classification
 
     def __init__(
         self,
@@ -472,7 +479,7 @@ Provide a comprehensive answer with specific data points."""
                     
                     api_kwargs = self._get_api_kwargs(
                         model=self.model,
-                        max_tokens=4000,
+                        max_tokens=self.MAX_TOKENS_TOOL_RESPONSE,
                         system=system_prompt,
                         messages=messages[1:],  # Skip system message
                         tools=anthropic_tools,
@@ -801,7 +808,7 @@ Respond with ONLY this JSON format:
                         model=self.model,
                         messages=[{"role": "user", "content": prompt}],
                         temperature=self.temperature,
-                        max_tokens=200,
+                        max_tokens=self.MAX_TOKENS_DECISION,
                     )
                     response = await asyncio.to_thread(
                         lambda: self.llm_client.chat.completions.create(**api_kwargs)
@@ -811,7 +818,7 @@ Respond with ONLY this JSON format:
                     response = await asyncio.to_thread(
                         lambda: self.llm_client.messages.create(
                             model=self.model,
-                            max_tokens=200,
+                            max_tokens=self.MAX_TOKENS_DECISION,
                             messages=[{"role": "user", "content": prompt}],
                         )
                     )
@@ -924,7 +931,7 @@ TICKERS (or NONE):"""
                     model=self.model,
                     messages=[{"role": "user", "content": extraction_prompt}],
                     temperature=0,
-                    max_tokens=50,
+                    max_tokens=self.MAX_TOKENS_EXTRACTION,
                 )
                 response = await asyncio.to_thread(
                     lambda: self.llm_client.chat.completions.create(**api_kwargs)
@@ -935,7 +942,7 @@ TICKERS (or NONE):"""
                 response = await asyncio.to_thread(
                     lambda: self.llm_client.messages.create(
                         model=self.model,
-                        max_tokens=50,
+                        max_tokens=self.MAX_TOKENS_EXTRACTION,
                         messages=[{"role": "user", "content": extraction_prompt}],
                     )
                 )
@@ -999,7 +1006,7 @@ Respond with ONLY the task type (e.g., "options_pricing"). Nothing else."""
                     model=self.model,
                     messages=[{"role": "user", "content": classification_prompt}],
                     temperature=0,
-                    max_tokens=20,
+                    max_tokens=self.MAX_TOKENS_CLASSIFICATION,
                 )
                 response = await asyncio.to_thread(
                     lambda: self.llm_client.chat.completions.create(**api_kwargs)
@@ -1010,7 +1017,7 @@ Respond with ONLY the task type (e.g., "options_pricing"). Nothing else."""
                 response = await asyncio.to_thread(
                     lambda: self.llm_client.messages.create(
                         model=self.model,
-                        max_tokens=20,
+                        max_tokens=self.MAX_TOKENS_CLASSIFICATION,
                         messages=[{"role": "user", "content": classification_prompt}],
                     )
                 )
@@ -1277,29 +1284,47 @@ Respond with ONLY the task type (e.g., "options_pricing"). Nothing else."""
         # Call LLM
         try:
             if hasattr(self.llm_client, "chat"):
-                # OpenAI-style client
-                response = await asyncio.to_thread(
-                    lambda: self.llm_client.chat.completions.create(
-                        model=self.model,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt},
-                        ],
-                        temperature=self.temperature,
-                    )
+                # OpenAI-style client - use _get_api_kwargs for param compatibility
+                api_kwargs = self._get_api_kwargs(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=self.temperature,
+                    max_tokens=self.MAX_TOKENS_ANALYSIS,
                 )
+                try:
+                    response = await asyncio.to_thread(
+                        lambda: self.llm_client.chat.completions.create(**api_kwargs)
+                    )
+                except Exception as e:
+                    # Fallback: if temperature is rejected, retry without it
+                    error_msg = str(e).lower()
+                    if "temperature" in error_msg and "does not support" in error_msg:
+                        self._temperature_supported = False
+                        api_kwargs.pop("temperature", None)
+                        response = await asyncio.to_thread(
+                            lambda: self.llm_client.chat.completions.create(**api_kwargs)
+                        )
+                    else:
+                        raise
                 return response.choices[0].message.content
 
             elif hasattr(self.llm_client, "messages"):
-                # Anthropic-style client
+                # Anthropic-style client (temperature is optional for Anthropic)
+                anthropic_kwargs = {
+                    "model": self.model,
+                    "max_tokens": self.MAX_TOKENS_ANALYSIS,
+                    "system": system_prompt,
+                    "messages": [{"role": "user", "content": user_prompt}],
+                }
+                # Only add temperature if model supports it
+                if self._temperature_supported and not self._is_reasoning_model():
+                    anthropic_kwargs["temperature"] = self.temperature
+                
                 response = await asyncio.to_thread(
-                    lambda: self.llm_client.messages.create(
-                        model=self.model,
-                        max_tokens=2000,
-                        system=system_prompt,
-                        messages=[{"role": "user", "content": user_prompt}],
-                        temperature=self.temperature,
-                    )
+                    lambda: self.llm_client.messages.create(**anthropic_kwargs)
                 )
                 return response.content[0].text
 
