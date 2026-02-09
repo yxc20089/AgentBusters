@@ -66,6 +66,13 @@ class FinanceAgentExecutor(AgentExecutor):
         "strangle", "spread", "covered call", "protective put", "butterfly",
         "volatility", "iv", "implied volatility", "black-scholes", "premium",
     ]
+    
+    # Token limits for different API call types
+    MAX_TOKENS_ANALYSIS = 4000      # Full analysis generation (~3000 words)
+    MAX_TOKENS_TOOL_RESPONSE = 4000  # Tool call responses
+    MAX_TOKENS_DECISION = 200        # Short decisions (trading, classification)
+    MAX_TOKENS_EXTRACTION = 50       # Ticker/metadata extraction
+    MAX_TOKENS_CLASSIFICATION = 20   # Task type classification
 
     def __init__(
         self,
@@ -96,20 +103,58 @@ class FinanceAgentExecutor(AgentExecutor):
                 try:
                     self.temperature = float(env_temp)
                 except ValueError:
-                    self.temperature = 0.0
+                    self.temperature = 0.0  # Invalid env var, use default
             else:
                 self.temperature = 0.0  # Default to 0 for reproducible benchmarks
 
-        # Reasoning effort for extended thinking (o1/o3/gpt-5 style models)
-        # Options: "off", "low", "medium", "high"
-        # Default is "off" - only enable if your API supports reasoning parameter
-        reasoning_env = os.getenv("PURPLE_REASONING_EFFORT", "off").lower()
-        if reasoning_env not in {"off", "low", "medium", "high"}:
-            reasoning_env = "off"  # Fallback to off for invalid values
-        self.reasoning_effort = None if reasoning_env == "off" else reasoning_env
-
         # Always use in-process MCP servers for controlled environment
         self.toolkit = MCPToolkit(simulation_date=simulation_date)
+        
+        # Track if model supports temperature (some reasoning models don't)
+        self._temperature_supported = True  # Will be set False on first rejection
+
+    def _is_reasoning_model(self, model: str | None = None) -> bool:
+        """Check if the model is a reasoning model that may not support temperature.
+        
+        Args:
+            model: Model name to check. If None, uses self.model.
+        """
+        model_name = (model or self.model).lower()
+        # o1/o3/o4 series and gpt-5-nano don't support custom temperature
+        # Note: gpt-5.2 and other gpt-5 models DO support temperature=0
+        return any(model_name.startswith(prefix) for prefix in (
+            "o1", "o3", "o4", "o1-", "o3-", "o4-", "gpt-5-nano"
+        ))
+    
+    def _get_api_kwargs(self, provider: str = "openai", **kwargs) -> dict:
+        """Build API kwargs, handling model-specific and provider-specific restrictions.
+        
+        Args:
+            provider: API provider ("openai" or "anthropic")
+            **kwargs: API call parameters
+            
+        Returns:
+            Modified kwargs dict with provider/model-appropriate parameters
+        """
+        api_kwargs = dict(kwargs)
+        
+        # Use the model from kwargs if provided, else fall back to self.model
+        model = api_kwargs.get("model", self.model)
+        is_reasoning = self._is_reasoning_model(model)
+        
+        # Handle temperature: skip if model doesn't support it
+        if "temperature" in api_kwargs:
+            if not self._temperature_supported or is_reasoning:
+                api_kwargs.pop("temperature", None)
+        
+        # Handle max_tokens: use max_completion_tokens for OpenAI reasoning models only
+        # Anthropic always uses max_tokens (doesn't support max_completion_tokens)
+        if "max_tokens" in api_kwargs:
+            if provider == "openai" and is_reasoning:
+                api_kwargs["max_completion_tokens"] = api_kwargs.pop("max_tokens")
+            # For Anthropic, keep max_tokens as-is
+        
+        return api_kwargs
 
     async def execute(
         self,
@@ -275,15 +320,6 @@ class FinanceAgentExecutor(AgentExecutor):
     # Maximum tool calls per request to prevent infinite loops
     # Can be configured via PURPLE_MAX_TOOL_CALLS environment variable
     MAX_TOOL_CALLS = int(os.environ.get("PURPLE_MAX_TOOL_CALLS", "25"))
-
-    def _get_reasoning_extra_body(self) -> dict | None:
-        """Get extra_body dict with reasoning config if enabled."""
-        if self.reasoning_effort:
-            return {
-                "reasoning": {"effort": self.reasoning_effort},
-                "include_reasoning": True,
-            }
-        return None
     
     def _init_tool_call_log(self):
         """Initialize tool call log for current request."""
@@ -364,18 +400,30 @@ Provide a comprehensive answer with specific data points."""
         while tool_call_count < self.MAX_TOOL_CALLS:
             try:
                 if hasattr(self.llm_client, "chat"):
-                    # OpenAI-style client
-                    extra_body = self._get_reasoning_extra_body()
-                    response = await asyncio.to_thread(
-                        lambda: self.llm_client.chat.completions.create(
-                            model=self.model,
-                            messages=messages,
-                            tools=TOOLS,
-                            tool_choice="auto",
-                            temperature=self.temperature,
-                            **({"extra_body": extra_body} if extra_body else {}),
-                        )
+                    # OpenAI-style client - build kwargs with compatibility handling
+                    api_kwargs = self._get_api_kwargs(
+                        model=self.model,
+                        messages=messages,
+                        tools=TOOLS,
+                        tool_choice="auto",
+                        temperature=self.temperature,
                     )
+                    
+                    try:
+                        response = await asyncio.to_thread(
+                            lambda: self.llm_client.chat.completions.create(**api_kwargs)
+                        )
+                    except Exception as e:
+                        # Fallback: if temperature is rejected, retry without it
+                        error_msg = str(e).lower()
+                        if "temperature" in error_msg and "does not support" in error_msg:
+                            self._temperature_supported = False
+                            api_kwargs.pop("temperature", None)
+                            response = await asyncio.to_thread(
+                                lambda: self.llm_client.chat.completions.create(**api_kwargs)
+                            )
+                        else:
+                            raise
 
                     assistant_message = response.choices[0].message
 
@@ -446,16 +494,19 @@ Provide a comprehensive answer with specific data points."""
                 elif hasattr(self.llm_client, "messages"):
                     # Anthropic-style client - convert tools to Anthropic format
                     anthropic_tools = self._convert_tools_to_anthropic_format()
+                    
+                    api_kwargs = self._get_api_kwargs(
+                        provider="anthropic",
+                        model=self.model,
+                        max_tokens=self.MAX_TOKENS_TOOL_RESPONSE,
+                        system=system_prompt,
+                        messages=messages[1:],  # Skip system message
+                        tools=anthropic_tools,
+                        temperature=self.temperature,
+                    )
 
                     response = await asyncio.to_thread(
-                        lambda: self.llm_client.messages.create(
-                            model=self.model,
-                            max_tokens=4000,
-                            system=system_prompt,
-                            messages=messages[1:],  # Skip system message
-                            tools=anthropic_tools,
-                            temperature=self.temperature,
-                        )
+                        lambda: self.llm_client.messages.create(**api_kwargs)
                     )
 
                     # Check for tool use
@@ -771,22 +822,22 @@ Respond with ONLY this JSON format:
         if self.llm_client is not None:
             try:
                 if hasattr(self.llm_client, "chat"):
-                    extra_body = self._get_reasoning_extra_body()
+                    # Use _get_api_kwargs for param compatibility across model types
+                    api_kwargs = self._get_api_kwargs(
+                        model=self.model,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=self.temperature,
+                        max_tokens=self.MAX_TOKENS_DECISION,
+                    )
                     response = await asyncio.to_thread(
-                        lambda: self.llm_client.chat.completions.create(
-                            model=self.model,
-                            messages=[{"role": "user", "content": prompt}],
-                            temperature=self.temperature,
-                            max_tokens=200,
-                            **({"extra_body": extra_body} if extra_body else {}),
-                        )
+                        lambda: self.llm_client.chat.completions.create(**api_kwargs)
                     )
                     llm_response = response.choices[0].message.content.strip()
                 elif hasattr(self.llm_client, "messages"):
                     response = await asyncio.to_thread(
                         lambda: self.llm_client.messages.create(
                             model=self.model,
-                            max_tokens=200,
+                            max_tokens=self.MAX_TOKENS_DECISION,
                             messages=[{"role": "user", "content": prompt}],
                         )
                     )
@@ -894,14 +945,15 @@ TICKERS (or NONE):"""
 
         try:
             if hasattr(self.llm_client, "chat"):
-                # OpenAI-style client
+                # OpenAI-style client - use _get_api_kwargs for param compatibility
+                api_kwargs = self._get_api_kwargs(
+                    model=self.model,
+                    messages=[{"role": "user", "content": extraction_prompt}],
+                    temperature=0,
+                    max_tokens=self.MAX_TOKENS_EXTRACTION,
+                )
                 response = await asyncio.to_thread(
-                    lambda: self.llm_client.chat.completions.create(
-                        model=self.model,
-                        messages=[{"role": "user", "content": extraction_prompt}],
-                        temperature=0,
-                        max_tokens=50,
-                    )
+                    lambda: self.llm_client.chat.completions.create(**api_kwargs)
                 )
                 result = response.choices[0].message.content.strip().upper()
             elif hasattr(self.llm_client, "messages"):
@@ -909,7 +961,7 @@ TICKERS (or NONE):"""
                 response = await asyncio.to_thread(
                     lambda: self.llm_client.messages.create(
                         model=self.model,
-                        max_tokens=50,
+                        max_tokens=self.MAX_TOKENS_EXTRACTION,
                         messages=[{"role": "user", "content": extraction_prompt}],
                     )
                 )
@@ -968,14 +1020,15 @@ Respond with ONLY the task type (e.g., "options_pricing"). Nothing else."""
 
         try:
             if hasattr(self.llm_client, "chat"):
-                # OpenAI-style client
+                # OpenAI-style client - use _get_api_kwargs for param compatibility
+                api_kwargs = self._get_api_kwargs(
+                    model=self.model,
+                    messages=[{"role": "user", "content": classification_prompt}],
+                    temperature=0,
+                    max_tokens=self.MAX_TOKENS_CLASSIFICATION,
+                )
                 response = await asyncio.to_thread(
-                    lambda: self.llm_client.chat.completions.create(
-                        model=self.model,
-                        messages=[{"role": "user", "content": classification_prompt}],
-                        temperature=0,
-                        max_tokens=20,
-                    )
+                    lambda: self.llm_client.chat.completions.create(**api_kwargs)
                 )
                 task_type = response.choices[0].message.content.strip().lower()
             elif hasattr(self.llm_client, "messages"):
@@ -983,7 +1036,7 @@ Respond with ONLY the task type (e.g., "options_pricing"). Nothing else."""
                 response = await asyncio.to_thread(
                     lambda: self.llm_client.messages.create(
                         model=self.model,
-                        max_tokens=20,
+                        max_tokens=self.MAX_TOKENS_CLASSIFICATION,
                         messages=[{"role": "user", "content": classification_prompt}],
                     )
                 )
@@ -1250,31 +1303,54 @@ Respond with ONLY the task type (e.g., "options_pricing"). Nothing else."""
         # Call LLM
         try:
             if hasattr(self.llm_client, "chat"):
-                # OpenAI-style client
-                extra_body = self._get_reasoning_extra_body()
-                response = await asyncio.to_thread(
-                    lambda: self.llm_client.chat.completions.create(
-                        model=self.model,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt},
-                        ],
-                        temperature=self.temperature,
-                        **({"extra_body": extra_body} if extra_body else {}),
-                    )
+                # OpenAI-style client - use _get_api_kwargs for param compatibility
+                api_kwargs = self._get_api_kwargs(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=self.temperature,
+                    max_tokens=self.MAX_TOKENS_ANALYSIS,
                 )
+                try:
+                    response = await asyncio.to_thread(
+                        lambda: self.llm_client.chat.completions.create(**api_kwargs)
+                    )
+                except Exception as e:
+                    # Fallback: handle parameter rejections by retrying with adjusted params
+                    error_msg = str(e).lower()
+                    if "temperature" in error_msg and "does not support" in error_msg:
+                        self._temperature_supported = False
+                        api_kwargs.pop("temperature", None)
+                        response = await asyncio.to_thread(
+                            lambda: self.llm_client.chat.completions.create(**api_kwargs)
+                        )
+                    elif "max_tokens" in error_msg and "max_completion_tokens" in error_msg:
+                        # Some gateways reject max_tokens even for non-reasoning models
+                        api_kwargs.pop("max_tokens", None)
+                        api_kwargs["max_completion_tokens"] = self.MAX_TOKENS_ANALYSIS
+                        response = await asyncio.to_thread(
+                            lambda: self.llm_client.chat.completions.create(**api_kwargs)
+                        )
+                    else:
+                        raise
                 return response.choices[0].message.content
 
             elif hasattr(self.llm_client, "messages"):
-                # Anthropic-style client
+                # Anthropic-style client (temperature is optional for Anthropic)
+                anthropic_kwargs = {
+                    "model": self.model,
+                    "max_tokens": self.MAX_TOKENS_ANALYSIS,
+                    "system": system_prompt,
+                    "messages": [{"role": "user", "content": user_prompt}],
+                }
+                # Only add temperature if model supports it
+                if self._temperature_supported and not self._is_reasoning_model():
+                    anthropic_kwargs["temperature"] = self.temperature
+                
                 response = await asyncio.to_thread(
-                    lambda: self.llm_client.messages.create(
-                        model=self.model,
-                        max_tokens=2000,
-                        system=system_prompt,
-                        messages=[{"role": "user", "content": user_prompt}],
-                        temperature=self.temperature,
-                    )
+                    lambda: self.llm_client.messages.create(**anthropic_kwargs)
                 )
                 return response.content[0].text
 

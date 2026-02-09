@@ -445,3 +445,225 @@ class TestExecutionEvaluatorConfig:
         evaluator = ExecutionEvaluator(task=task, llm_client=mock_client)
 
         assert evaluator.llm_client is mock_client
+
+
+class TestCallLLMModelSpecificKwargs:
+    """
+    Tests for call_llm model-specific parameter handling.
+    
+    Addresses Copilot review: Verify that the kwargs passed to 
+    client.chat.completions.create are correct for different model types:
+    - Regular models: max_tokens, temperature
+    - Reasoning models (o1, o3, o4, gpt-5-nano): max_completion_tokens, no temperature
+    """
+
+    def test_regular_model_uses_max_tokens_and_temperature(self):
+        """Regular models should use max_tokens and temperature."""
+        from evaluators.llm_utils import call_llm
+        
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "test response"
+        mock_client.chat.completions.create.return_value = mock_response
+        
+        call_llm(
+            client=mock_client,
+            prompt="test prompt",
+            model="gpt-4o-mini",  # Regular model
+            temperature=0.0,
+            max_tokens=100,
+            model_context_limit=128000,
+        )
+        
+        # Verify the call was made with correct kwargs
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert "max_tokens" in call_kwargs, "Regular model should use max_tokens"
+        assert "max_completion_tokens" not in call_kwargs, "Regular model should NOT use max_completion_tokens"
+        assert "temperature" in call_kwargs, "Regular model should use temperature"
+        assert call_kwargs["temperature"] == 0.0
+
+    def test_o1_model_uses_max_completion_tokens_no_temperature(self):
+        """o1 models should use max_completion_tokens and no temperature."""
+        from evaluators.llm_utils import call_llm
+        
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "test response"
+        mock_client.chat.completions.create.return_value = mock_response
+        
+        call_llm(
+            client=mock_client,
+            prompt="test prompt",
+            model="o1-mini",  # Reasoning model
+            temperature=0.0,
+            max_tokens=100,
+            model_context_limit=128000,
+        )
+        
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert "max_completion_tokens" in call_kwargs, "o1 model should use max_completion_tokens"
+        assert "max_tokens" not in call_kwargs, "o1 model should NOT use max_tokens"
+        assert "temperature" not in call_kwargs, "o1 model should NOT use temperature"
+
+    def test_o3_model_uses_max_completion_tokens_no_temperature(self):
+        """o3 models should use max_completion_tokens and no temperature."""
+        from evaluators.llm_utils import call_llm
+        
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "test response"
+        mock_client.chat.completions.create.return_value = mock_response
+        
+        call_llm(
+            client=mock_client,
+            prompt="test prompt",
+            model="o3-mini",  # Reasoning model
+            temperature=0.0,
+            max_tokens=100,
+            model_context_limit=128000,
+        )
+        
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert "max_completion_tokens" in call_kwargs, "o3 model should use max_completion_tokens"
+        assert "max_tokens" not in call_kwargs, "o3 model should NOT use max_tokens"
+        assert "temperature" not in call_kwargs, "o3 model should NOT use temperature"
+
+    def test_o4_model_uses_max_completion_tokens_no_temperature(self):
+        """o4 models should use max_completion_tokens and no temperature."""
+        from evaluators.llm_utils import call_llm
+        
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "test response"
+        mock_client.chat.completions.create.return_value = mock_response
+        
+        call_llm(
+            client=mock_client,
+            prompt="test prompt",
+            model="o4-mini",  # Reasoning model
+            temperature=0.0,
+            max_tokens=100,
+            model_context_limit=128000,
+        )
+        
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert "max_completion_tokens" in call_kwargs, "o4 model should use max_completion_tokens"
+        assert "max_tokens" not in call_kwargs, "o4 model should NOT use max_tokens"
+        assert "temperature" not in call_kwargs, "o4 model should NOT use temperature"
+
+    def test_gpt5_nano_uses_max_completion_tokens_no_temperature(self):
+        """gpt-5-nano should use max_completion_tokens and no temperature."""
+        from evaluators.llm_utils import call_llm
+        
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "test response"
+        mock_client.chat.completions.create.return_value = mock_response
+        
+        call_llm(
+            client=mock_client,
+            prompt="test prompt",
+            model="gpt-5-nano-2025-08-07",  # Reasoning model
+            temperature=0.0,
+            max_tokens=100,
+            model_context_limit=128000,
+        )
+        
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert "max_completion_tokens" in call_kwargs, "gpt-5-nano should use max_completion_tokens"
+        assert "max_tokens" not in call_kwargs, "gpt-5-nano should NOT use max_tokens"
+        assert "temperature" not in call_kwargs, "gpt-5-nano should NOT use temperature"
+
+    def test_gpt5_regular_uses_max_tokens_and_temperature(self):
+        """gpt-5.2 (non-nano) should use max_tokens and temperature."""
+        from evaluators.llm_utils import call_llm
+        
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "test response"
+        mock_client.chat.completions.create.return_value = mock_response
+        
+        call_llm(
+            client=mock_client,
+            prompt="test prompt",
+            model="gpt-5.2-2025-12-11",  # Regular GPT-5 model (not nano)
+            temperature=0.0,
+            max_tokens=100,
+            model_context_limit=128000,
+        )
+        
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert "max_tokens" in call_kwargs, "gpt-5.2 should use max_tokens"
+        assert "max_completion_tokens" not in call_kwargs, "gpt-5.2 should NOT use max_completion_tokens"
+        assert "temperature" in call_kwargs, "gpt-5.2 should use temperature"
+        assert call_kwargs["temperature"] == 0.0
+
+    def test_fallback_on_max_tokens_error(self):
+        """Test fallback to max_completion_tokens when max_tokens is rejected."""
+        from evaluators.llm_utils import call_llm
+        
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "fallback response"
+        
+        # First call raises error mentioning both max_tokens and max_completion_tokens
+        # Second call (retry) succeeds
+        mock_client.chat.completions.create.side_effect = [
+            Exception("Unsupported parameter: 'max_tokens' is not supported, use 'max_completion_tokens'"),
+            mock_response,
+        ]
+        
+        result = call_llm(
+            client=mock_client,
+            prompt="test prompt",
+            model="gpt-4o-mini",  # Regular model, but API rejects max_tokens
+            temperature=0.0,
+            max_tokens=100,
+            model_context_limit=128000,
+        )
+        
+        assert result == "fallback response"
+        # Verify retry was made
+        assert mock_client.chat.completions.create.call_count == 2
+        # Second call should use max_completion_tokens
+        retry_kwargs = mock_client.chat.completions.create.call_args_list[1][1]
+        assert "max_completion_tokens" in retry_kwargs
+
+    def test_fallback_on_temperature_error(self):
+        """Test fallback when temperature is rejected."""
+        from evaluators.llm_utils import call_llm
+        
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "fallback response"
+        
+        # First call raises error about temperature
+        # Second call (retry) succeeds
+        mock_client.chat.completions.create.side_effect = [
+            Exception("This model does not support temperature parameter"),
+            mock_response,
+        ]
+        
+        result = call_llm(
+            client=mock_client,
+            prompt="test prompt",
+            model="gpt-4o-mini",  # Regular model, but API rejects temperature
+            temperature=0.0,
+            max_tokens=100,
+            model_context_limit=128000,
+        )
+        
+        assert result == "fallback response"
+        # Verify retry was made
+        assert mock_client.chat.completions.create.call_count == 2
+        # Second call should NOT have temperature
+        retry_kwargs = mock_client.chat.completions.create.call_args_list[1][1]
+        assert "temperature" not in retry_kwargs
