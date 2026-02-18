@@ -32,7 +32,7 @@
     stringstyle=\color{red},
 }
 
-\title{\textbf{CIO-Agent FAB++: A Dynamic Multi-Dimensional Benchmark\\for Evaluating AI Finance Agents}}
+\title{\textbf{TraderBench: A Dynamic Multi-Dimensional Benchmark\\for Evaluating AI Finance Agents}}
 
 \author{
     Team AgentBusters\\
@@ -47,7 +47,7 @@
 \maketitle
 
 \begin{abstract}
-We present CIO-Agent FAB++ (Finance Agent Benchmark Plus Plus), a comprehensive evaluation framework for assessing AI agents on financial analysis tasks. FAB++ integrates six benchmark datasets---BizFinBench, PRBench, Synthetic Questions, Options Alpha, Crypto Trading, and OpenAI GDPVal---into a unified scoring system with five equally weighted sections (20\% each): Knowledge Retrieval, Analytical Reasoning, Options Trading, Crypto Trading, and Professional Tasks. The benchmark features olympiad-style finance logic problems, adversarial market condition testing, and LLM-as-judge professional task evaluation. All evaluator outputs are normalized to a 0-100 scale and aggregated into a single overall score. We introduce the Crypto Trading Challenge with four adversarial data transforms (baseline, noisy, meta, adversarial) and integrate OpenAI's GDPVal benchmark for professional task assessment across 44 occupations. Our framework leverages the Agent-to-Agent (A2A) protocol for standardized communication and Model Context Protocol (MCP) servers for real-time financial data access. Experimental results on a GPT-4o baseline demonstrate 69.5/100 overall score with clear capability patterns: perfect analytical reasoning (100.0), strong professional tasks (76.5), moderate knowledge retrieval (66.7) and options (61.2), and challenging crypto trading (43.0).
+We present TraderBench (formerly CIO-Agent FAB++), a comprehensive evaluation framework for assessing AI agents on financial analysis tasks. TraderBench integrates six benchmark datasets---BizFinBench, PRBench, Synthetic Questions, Options Alpha, Crypto Trading, and OpenAI GDPVal---into a unified scoring system with five equally weighted sections (20\% each): Knowledge Retrieval, Analytical Reasoning, Options Trading, Crypto Trading, and Professional Tasks. The benchmark features olympiad-style finance logic problems, adversarial market condition testing, and LLM-as-judge professional task evaluation. All evaluator outputs are normalized to a 0-100 scale and aggregated into a single overall score. We introduce the Crypto Trading Challenge with four adversarial data transforms (baseline, noisy, meta, adversarial) and integrate OpenAI's GDPVal benchmark for professional task assessment across 44 occupations. Our framework leverages the Agent-to-Agent (A2A) protocol for standardized communication and Model Context Protocol (MCP) servers for real-time financial data access. Experimental results on a GPT-4o baseline demonstrate 69.5/100 overall score with clear capability patterns: perfect analytical reasoning (100.0), strong professional tasks (76.5), moderate knowledge retrieval (66.7) and options (61.2), and challenging crypto trading (43.0).
 \end{abstract}
 
 \textbf{Keywords:} AI Agents, Finance Benchmark, Options Trading, Crypto Trading, GDPVal, Agent Evaluation, A2A Protocol, MCP
@@ -64,7 +64,7 @@ Existing finance benchmarks suffer from several limitations:
     \item \textbf{Limited options coverage}: Few benchmarks evaluate quantitative finance skills like derivatives pricing and risk management.
 \end{enumerate}
 
-We address these limitations with CIO-Agent FAB++, a dynamic benchmark system that:
+We address these limitations with TraderBench, a dynamic benchmark system that:
 \begin{itemize}
     \item Generates novel evaluation tasks from real financial data with temporal locking
     \item Evaluates agents across five distinct capability dimensions with equal weighting
@@ -91,12 +91,12 @@ The Black-Scholes-Merton model \citep{black1973pricing, merton1973theory} remain
 
 \subsection{Overview}
 
-FAB++ implements a Green Agent (evaluator) and Purple Agent (finance analyst) architecture following the A2A protocol specification. Figure \ref{fig:architecture} illustrates the system components.
+TraderBench implements a Green Agent (evaluator) and Purple Agent (finance analyst) architecture following the A2A protocol specification. Figure \ref{fig:architecture} illustrates the system components.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.95\textwidth]{figures/system_architecture.pdf}
-\caption{FAB++ System Architecture. The Green Agent (evaluator) communicates with the Purple Agent (finance analyst) via the A2A protocol. Both agents access financial data and computation capabilities through six specialized MCP servers.}
+\caption{TraderBench System Architecture. The Green Agent (evaluator) communicates with the Purple Agent (finance analyst) via the A2A protocol. Both agents access financial data and computation capabilities through six specialized MCP servers.}
 \label{fig:architecture}
 \end{figure}
 
@@ -146,12 +146,12 @@ Risk Metrics & 8106 & VaR computation, Sharpe/Sortino ratios, stress testing \\
 
 \subsection{Overview: The Benchmark Router}
 
-FAB++ implements a unified evaluation router that orchestrates tasks from five distinct benchmark datasets, each targeting different financial reasoning capabilities. The router samples questions from each dataset according to a configurable strategy (stratified, random, or sequential) and routes responses to dataset-specific evaluators. All evaluator outputs are then normalized and aggregated into a single overall score. Figure~\ref{fig:section_scores} shows the capability profile across all five sections.
+TraderBench implements a unified evaluation router that orchestrates tasks from five distinct benchmark datasets, each targeting different financial reasoning capabilities. The router samples questions from each dataset according to a configurable strategy (stratified, random, or sequential) and routes responses to dataset-specific evaluators. All evaluator outputs are then normalized and aggregated into a single overall score. Figure~\ref{fig:section_scores} shows the capability profile across all five sections.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.9\textwidth]{figures/section_scores.pdf}
-\caption{FAB++ Section Scores for GPT-4o Baseline. The benchmark evaluates five equally weighted sections (20\% each): Knowledge Retrieval, Analytical Reasoning, Professional Tasks (GDPVal), Options Trading, and Crypto Trading. The dashed line shows the overall score of 69.5.}
+\caption{TraderBench Section Scores for GPT-4o Baseline. The benchmark evaluates five equally weighted sections (20\% each): Knowledge Retrieval, Analytical Reasoning, Professional Tasks (GDPVal), Options Trading, and Crypto Trading. The dashed line shows the overall score of 69.5.}
 \label{fig:section_scores}
 \end{figure}
 
@@ -241,7 +241,7 @@ The equal weighting ensures balanced evaluation across all five capability dimen
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.6\textwidth]{figures/weight_distribution.pdf}
-\caption{FAB++ Section Weight Distribution. Each section contributes equally (20\%) to the overall score, ensuring balanced capability assessment.}
+\caption{TraderBench Section Weight Distribution. Each section contributes equally (20\%) to the overall score, ensuring balanced capability assessment.}
 \label{fig:weight_distribution}
 \end{figure}
 
@@ -311,7 +311,7 @@ The overall score is:
 
 \subsection{Optional: Adversarial Debate}
 
-FAB++ supports an optional adversarial debate mode to test agent conviction:
+TraderBench supports an optional adversarial debate mode to test agent conviction:
 
 \begin{algorithm}[H]
 \caption{Adversarial Debate Protocol}
@@ -752,7 +752,7 @@ The unified five-section evaluation reveals consistent patterns across all bench
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.7\textwidth]{figures/radar_chart.pdf}
-\caption{FAB++ Capability Profile (Radar Chart). The pentagonal profile shows strength in Analytical Reasoning (100.0) and GDPVal (76.5), with opportunity for improvement in Crypto Trading (43.0).}
+\caption{TraderBench Capability Profile (Radar Chart). The pentagonal profile shows strength in Analytical Reasoning (100.0) and GDPVal (76.5), with opportunity for improvement in Crypto Trading (43.0).}
 \label{fig:radar_chart}
 \end{figure}
 
@@ -777,7 +777,7 @@ The unified five-section evaluation reveals consistent patterns across all bench
 
 \section{Conclusion}
 
-We presented CIO-Agent FAB++, a comprehensive benchmark for evaluating AI finance agents across five equally weighted sections (20\% each): Knowledge Retrieval, Analytical Reasoning, Options Trading, Crypto Trading, and Professional Tasks. Our key contributions include:
+We presented TraderBench, a comprehensive benchmark for evaluating AI finance agents across five equally weighted sections (20\% each): Knowledge Retrieval, Analytical Reasoning, Options Trading, Crypto Trading, and Professional Tasks. Our key contributions include:
 
 \begin{itemize}
     \item \textbf{Five-Section Unified Scoring}: A balanced scoring system that normalizes all evaluator outputs to 0-100 and combines them into a single overall score, ensuring agents must demonstrate competence across all financial capability dimensions.
@@ -929,7 +929,7 @@ run_stress_test(
 \section{Evaluation Configuration}
 
 \begin{lstlisting}[language=Python, caption=Sample Evaluation Config (YAML)]
-name: "FAB++ Full Evaluation"
+name: "TraderBench Full Evaluation"
 datasets:
   - type: bizfinbench
     path: data/BizFinBench.v2

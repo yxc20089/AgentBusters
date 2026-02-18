@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="docs/agentbusters-logo.jpg" alt="AgentBusters Logo" width="200"/>
+  <img src="docs/agentbusters-logo.jpg" alt="TraderBench Logo" width="200"/>
 </p>
 
-# AgentBusters - CIO-Agent FAB++ System
+# TraderBench
 
-A dynamic finance agent benchmark system for the [AgentBeats Competition](https://rdi.berkeley.edu/agentx-agentbeats). This project implements both **Green Agent** (Evaluator) and **Purple Agent** (Finance Analyst) using the A2A (Agent-to-Agent) protocol.
+A dynamic finance agent benchmark for evaluating AI agents in adversarial capital markets. Built for the [AgentBeats Competition](https://rdi.berkeley.edu/agentx-agentbeats). This project implements both **Green Agent** (Evaluator) and **Purple Agent** (Finance Analyst) using the A2A (Agent-to-Agent) protocol.
 
 **[Technical Report (PDF)](paper/agentbusters.pdf)**
 
@@ -102,7 +102,7 @@ cp .env.example .env
 
 ## Overview
 
-The CIO-Agent FAB++ system evaluates AI agents on financial analysis tasks using a **unified scoring system** across three weighted sections:
+The TraderBench system evaluates AI agents on financial analysis tasks using a **unified scoring system** across three weighted sections:
 
 | Section | Weight | Datasets | Skills Tested |
 |---------|--------|----------|---------------|
@@ -167,7 +167,7 @@ For production deployment with PostgreSQL and hidden windows, see [docs/DEPLOYME
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          AgentBusters System                                 │
+│                          TraderBench System                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────┐           A2A Protocol          ┌───────────────┐      │
@@ -324,7 +324,7 @@ purple-agent info NVDA                    # Pulls quote/statistics/SEC snapshot 
 purple-agent card                         # Prints the Purple Agent Card JSON
 
 # Green Evaluator power tools
-cio-agent list-tasks                      # View all FAB++ templates
+cio-agent list-tasks                      # View all TraderBench templates
 cio-agent lake-status                     # Check Financial Lake cache status
 
 ################################################################################
@@ -483,7 +483,7 @@ curl -X POST http://localhost:9109/ \
 
 # Config file example (config/eval_full.yaml):
 # ---
-# name: "FAB++ Full Evaluation"
+# name: "TraderBench Full Evaluation"
 # datasets:
 #   - type: synthetic
 #     path: data/synthetic_questions/questions.json
@@ -832,12 +832,12 @@ rm tasks.db
 ## Project Structure
 
 ```
-AgentBusters/
+TraderBench/
 ├── src/
 │   ├── cio_agent/           # Green Agent (Evaluator)
 │   │   ├── a2a_server.py    # A2A server entry point (AgentBeats)
 │   │   ├── green_executor.py # A2A protocol executor
-│   │   ├── green_agent.py   # FAB++ evaluation logic
+│   │   ├── green_agent.py   # TraderBench evaluation logic
 │   │   ├── messenger.py     # A2A messaging utilities
 │   │   ├── models.py        # Core data models (18 TaskCategories)
 │   │   ├── evaluator.py     # Comprehensive evaluator
