@@ -8,6 +8,10 @@ A dynamic finance agent benchmark for evaluating AI agents in adversarial capita
 
 **[Technical Report (PDF)](paper/agentbusters.pdf)**
 
+## News
+
+- **2026-02** TraderBench won **2nd place** in the [AgentBeats Competition](https://rdi.berkeley.edu/agentx-agentbeats)!
+
 ## 🚀 AgentBeats Platform Submission
 
 This codebase is designed to work with the [AgentBeats platform](https://agentbeats.dev). The Green Agent follows the official [green-agent-template](https://github.com/RDI-Foundation/green-agent-template).
