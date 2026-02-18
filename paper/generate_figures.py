@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate figures for the AgentBusters FAB++ paper.
+Generate figures for the TraderBench paper.
 Based on evaluation results from 2026-01-31.
 """
 
@@ -206,7 +206,7 @@ def fig1_section_scores():
                label=f"Overall: {RESULTS['overall']:.1f}")
 
     ax.set_ylabel('Score (0-100)')
-    ax.set_title('FAB++ Section Scores (GPT-4o Baseline)')
+    ax.set_title('TraderBench Section Scores (GPT-4o Baseline)')
     ax.set_ylim(0, 110)
     ax.legend(loc='upper right')
 
@@ -359,7 +359,7 @@ def fig5_radar_chart():
         ax.annotate(f'{score:.1f}', xy=(angle, score), xytext=(angle, score + 8),
                     ha='center', fontsize=10, fontweight='bold')
 
-    ax.set_title('FAB++ Capability Profile\n(GPT-4o Baseline)', size=14, y=1.08)
+    ax.set_title('TraderBench Capability Profile\n(GPT-4o Baseline)', size=14, y=1.08)
 
     plt.tight_layout()
     plt.savefig('figures/radar_chart.pdf', dpi=300, bbox_inches='tight')
@@ -384,7 +384,7 @@ def fig6_weight_distribution():
         autotext.set_fontsize(12)
         autotext.set_fontweight('bold')
 
-    ax.set_title('FAB++ Section Weight Distribution', size=14)
+    ax.set_title('TraderBench Section Weight Distribution', size=14)
 
     plt.tight_layout()
     plt.savefig('figures/weight_distribution.pdf', dpi=300, bbox_inches='tight')
@@ -396,7 +396,7 @@ if __name__ == '__main__':
     import os
     os.chdir('/Users/berta/Projects/AgentBusters/paper')
 
-    print("Generating FAB++ paper figures...")
+    print("Generating TraderBench paper figures...")
     fig0_system_architecture()
     fig1_section_scores()
     fig2_gdpval_breakdown()
