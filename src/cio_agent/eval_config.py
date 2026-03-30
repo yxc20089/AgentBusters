@@ -380,6 +380,85 @@ class LLMEvaluationConfig(BaseModel):
     )
 
 
+class JudgeConfig(BaseModel):
+    """Configuration for answer evaluation/judging.
+
+    Supports two modes:
+    - "direct": Use built-in evaluators directly (default, backward compatible)
+    - "mcp": Use Judge MCP server for evaluation-as-a-service
+
+    The MCP mode provides additional capabilities like semantic evaluation,
+    contradiction detection, and hallucination detection.
+    """
+    mode: Literal["direct", "mcp"] = Field(
+        default="direct",
+        description="Judge mode: 'direct' (built-in) or 'mcp' (Judge MCP server)"
+    )
+    mcp_url: Optional[str] = Field(
+        default=None,
+        description="URL for Judge MCP server (required if mode='mcp'). "
+                    "Can also be set via MCP_JUDGE_URL env var."
+    )
+    semantic_threshold: float = Field(
+        default=0.5,
+        description="Minimum semantic similarity score to pass (0.0-1.0)"
+    )
+    numeric_tolerance: float = Field(
+        default=0.01,
+        description="Relative tolerance for numeric comparisons (e.g., 0.01 = 1%)"
+    )
+    enable_contradiction_check: bool = Field(
+        default=False,
+        description="Enable contradiction detection in answers"
+    )
+    enable_hallucination_check: bool = Field(
+        default=False,
+        description="Enable hallucination detection in answers"
+    )
+
+    def get_mcp_url(self) -> Optional[str]:
+        """Get MCP URL from config or environment."""
+        import os
+        return self.mcp_url or os.environ.get("MCP_JUDGE_URL")
+
+
+class RobustnessEvalConfig(BaseModel):
+    """Configuration for adversarial robustness testing.
+
+    When enabled, a sample of questions will be tested with perturbations
+    (paraphrase, typo, distraction) to measure agent consistency.
+    The robustness score is included in the final unified score.
+    """
+    enabled: bool = Field(
+        default=False,
+        description="Enable robustness testing as part of evaluation"
+    )
+    sample_ratio: float = Field(
+        default=0.2,
+        description="Ratio of questions to test for robustness (0.0-1.0)"
+    )
+    min_samples: int = Field(
+        default=3,
+        description="Minimum number of questions to test"
+    )
+    max_samples: int = Field(
+        default=10,
+        description="Maximum number of questions to test"
+    )
+    attack_types: List[str] = Field(
+        default_factory=lambda: ["paraphrase", "typo", "distraction"],
+        description="Types of perturbation attacks to use"
+    )
+    attack_intensity: float = Field(
+        default=0.5,
+        description="How aggressive perturbations are (0.0-1.0)"
+    )
+    seed: int = Field(
+        default=42,
+        description="Random seed for reproducibility"
+    )
+
+
 class EvaluationConfig(BaseModel):
     """Main evaluation configuration."""
     name: str = Field(
@@ -406,6 +485,15 @@ class EvaluationConfig(BaseModel):
     llm_eval: LLMEvaluationConfig = Field(
         default_factory=LLMEvaluationConfig,
         description="LLM-as-judge configuration for dataset evaluators."
+    )
+    robustness: RobustnessEvalConfig = Field(
+        default_factory=RobustnessEvalConfig,
+        description="Adversarial robustness testing configuration."
+    )
+    judge: JudgeConfig = Field(
+        default_factory=JudgeConfig,
+        description="Answer evaluation/judging configuration. "
+                    "Switch between direct evaluators and Judge MCP."
     )
 
     @classmethod

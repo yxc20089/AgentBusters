@@ -93,3 +93,7 @@ data/crypto/hidden/
 
 # Hidden seeds (NEVER commit)
 .agentbusters/
+results/
+!results/.gitkeep
+!results/leaderboard/
+!results/leaderboard/.gitkeep
